@@ -6,11 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Vibration,
 } from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { ttsService } from '@features/voice/tts_service';
 import { Sun, BellOff, Clock, Sparkles } from 'lucide-react-native';
+import * as Notifications from 'expo-notifications';
 
 interface AlarmRingingModalProps {
   visible: boolean;
@@ -33,10 +35,34 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      // Speak the empathetic wake-up message
-      ttsService.speak(greetingText);
+      // Dismiss any remaining notification banners from tray
+      Notifications.dismissAllNotificationsAsync().catch(() => {});
 
-      // Start gentle pulsing animation
+      // Start persistent rhythmic alarm vibration
+      // [wait 0ms, vibrate 800ms, pause 400ms, vibrate 800ms, pause 400ms]
+      Vibration.vibrate([0, 800, 400, 800, 400], true);
+
+      let isMounted = true;
+
+      // Continuously loop speech reminder so it doesn't stop until dismissed
+      const runSpeechLoop = async () => {
+        while (isMounted) {
+          await ttsService.speak(greetingText);
+          if (!isMounted) break;
+          // Wait 3 seconds before next wake-up call
+          await new Promise((r) => setTimeout(r, 3000));
+          if (!isMounted) break;
+          await ttsService.speak(
+            `Báo thức ${alarmTime}! Đã đến giờ thức dậy rồi bạn ơi. Hãy mở mắt chào ngày mới nhé!`
+          );
+          if (!isMounted) break;
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      };
+
+      runSpeechLoop();
+
+      // Start gentle pulsing sun animation
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -54,19 +80,25 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
       loop.start();
 
       return () => {
+        isMounted = false;
         loop.stop();
+        Vibration.cancel();
         ttsService.stop();
       };
     }
-  }, [visible, greetingText, pulseAnim]);
+  }, [visible, greetingText, alarmTime, pulseAnim]);
 
   const handleDismiss = () => {
+    Vibration.cancel();
     ttsService.stop();
+    Notifications.dismissAllNotificationsAsync().catch(() => {});
     onDismiss();
   };
 
   const handleSnooze = () => {
+    Vibration.cancel();
     ttsService.stop();
+    Notifications.dismissAllNotificationsAsync().catch(() => {});
     onSnooze();
   };
 

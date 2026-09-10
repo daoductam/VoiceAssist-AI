@@ -88,6 +88,7 @@ export class NotificationService {
       },
     };
 
+    let primaryId = alarm.id;
     let trigger: Notifications.NotificationTriggerInput;
 
     if (alarm.repeatDays && alarm.repeatDays.length > 0) {
@@ -98,6 +99,12 @@ export class NotificationService {
         minute,
         repeats: true,
       };
+
+      primaryId = await Notifications.scheduleNotificationAsync({
+        identifier: alarm.id,
+        content,
+        trigger,
+      });
     } else {
       // One-time alarm: compute exact Date target
       const now = new Date();
@@ -109,19 +116,25 @@ export class NotificationService {
         targetDate.setDate(targetDate.getDate() + 1);
       }
 
-      trigger = {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: targetDate,
-      };
+      // Schedule consecutive burst (at T, T+10s, T+20s) so it rings and vibrates repeatedly
+      for (let i = 0; i < 3; i++) {
+        const burstDate = new Date(targetDate.getTime() + i * 10000);
+        const burstId = await Notifications.scheduleNotificationAsync({
+          identifier: `${alarm.id}_burst_${i}`,
+          content: {
+            ...content,
+            title: i === 0 ? content.title : `⏰ ${alarm.label || 'Báo thức'} (${i + 1}/3)`,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: burstDate,
+          },
+        });
+        if (i === 0) primaryId = burstId;
+      }
     }
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      identifier: alarm.id,
-      content,
-      trigger,
-    });
-
-    return notificationId;
+    return primaryId;
   }
 
   /**
@@ -160,30 +173,41 @@ export class NotificationService {
     return notificationId;
   }
 
-
   /**
-   * Trigger an instant test alarm in N seconds
+   * Trigger an instant test alarm in N seconds with consecutive burst rings
    */
   async triggerTestAlarm(seconds: number = 2): Promise<void> {
     await this.init();
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '⏰ Báo thức thử nghiệm',
-        body: 'Thức dậy thôi nào bạn ơi! Chuông báo thức đã reo thành công! ☀️',
-        sound: 'default',
-        data: {
-          type: 'alarm',
-          time: new Date().toLocaleTimeString('vi-VN', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
+
+    const burstMessages = [
+      'Thức dậy thôi nào bạn ơi! Chuông báo thức đã reo! ☀️',
+      'Đã đến giờ rồi, mở mắt chào ngày mới thôi! ⏰',
+      'Dậy nào, một ngày mới tràn đầy năng lượng đang chờ bạn! ✨',
+      'Bấm vào thông báo này để vào màn hình thức dậy nhé! 🔔',
+    ];
+
+    for (let i = 0; i < burstMessages.length; i++) {
+      await Notifications.scheduleNotificationAsync({
+        identifier: `test_alarm_burst_${i}`,
+        content: {
+          title: `⏰ Báo thức (${i + 1}/${burstMessages.length})`,
+          body: burstMessages[i],
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          data: {
+            type: 'alarm',
+            time: new Date().toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          },
         },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: Math.max(1, seconds),
-      },
-    });
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: Math.max(1, seconds + i * 4),
+        },
+      });
+    }
   }
 
   /**
@@ -192,6 +216,10 @@ export class NotificationService {
   async cancel(identifier: string): Promise<void> {
     try {
       await Notifications.cancelScheduledNotificationAsync(identifier);
+      for (let i = 0; i < 5; i++) {
+        await Notifications.cancelScheduledNotificationAsync(`${identifier}_burst_${i}`);
+        await Notifications.cancelScheduledNotificationAsync(`test_alarm_burst_${i}`);
+      }
     } catch {
       // Ignore if doesn't exist
     }
