@@ -36,6 +36,15 @@ export class ReminderDao {
     return rows.map(mapRowToReminder);
   }
 
+  async getById(id: string): Promise<Reminder | null> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<ReminderRow>(
+      'SELECT * FROM reminders WHERE id = ?;',
+      [id]
+    );
+    return row ? mapRowToReminder(row) : null;
+  }
+
   async getUpcoming(limit: number = 10): Promise<Reminder[]> {
     const db = await getDatabase();
     const nowIso = new Date().toISOString();

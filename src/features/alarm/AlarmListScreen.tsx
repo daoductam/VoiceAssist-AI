@@ -6,21 +6,39 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { DAY_LABELS_VN } from '@core/constants';
-import { Plus, Bell, Clock, CheckCircle2 } from 'lucide-react-native';
+import {
+  Plus,
+  Bell,
+  Clock,
+  CheckCircle2,
+  Trash2,
+  Sparkles,
+  Play,
+} from 'lucide-react-native';
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
 import { useReminderStore } from '@shared/stores/useReminderStore';
 import { useTodoStore } from '@shared/stores/useTodoStore';
+import { notificationService } from '@domain/services/notification_service';
 
 type SubTab = 'alarms' | 'reminders' | 'todos';
 
 export const AlarmListScreen: React.FC = () => {
   const [subTab, setSubTab] = useState<SubTab>('alarms');
 
-  const { alarms, loadAlarms, toggleAlarm } = useAlarmStore();
+  // Add Alarm Modal State
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [inputTime, setInputTime] = useState<string>('');
+  const [inputLabel, setInputLabel] = useState<string>('Báo thức');
+
+  const { alarms, loadAlarms, toggleAlarm, deleteAlarm, createAlarm } =
+    useAlarmStore();
   const { reminders, loadReminders, completeReminder } = useReminderStore();
   const { todos, loadTodos, toggleTodo } = useTodoStore();
 
@@ -30,16 +48,77 @@ export const AlarmListScreen: React.FC = () => {
     loadTodos();
   }, [loadAlarms, loadReminders, loadTodos]);
 
+  const handleTestAlarm = async () => {
+    try {
+      await notificationService.triggerTestAlarm(2);
+      Alert.alert(
+        '⏰ Đã hẹn giờ chuông thử!',
+        'Chuông và giao diện thức dậy sẽ reo sau 2 giây. Bạn có thể để app trên màn hình hoặc bấm nút sườn khoá máy để thử nghiệm.'
+      );
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể kích hoạt chuông thử: ' + (e as Error).message);
+    }
+  };
+
+  const handleOpenAddModal = () => {
+    // Default time = 2 minutes from now
+    const d = new Date(Date.now() + 2 * 60 * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    setInputTime(`${hh}:${mm}`);
+    setInputLabel('Báo thức');
+    setShowAddModal(true);
+  };
+
+  const handleSaveAlarm = async () => {
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!timeRegex.test(inputTime)) {
+      Alert.alert(
+        'Giờ không hợp lệ',
+        'Vui lòng nhập định dạng giờ HH:mm (ví dụ: 06:30 hoặc 17:05).'
+      );
+      return;
+    }
+
+    try {
+      await createAlarm({
+        time: inputTime,
+        label: inputLabel.trim() || 'Báo thức',
+      });
+      setShowAddModal(false);
+      Alert.alert('Thành công 🎉', `Đã đặt báo thức lúc ${inputTime}!`);
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể tạo báo thức: ' + (e as Error).message);
+    }
+  };
+
+  const handleDeleteAlarm = (id: string, time: string) => {
+    Alert.alert('Xoá báo thức', `Bạn có chắc muốn xoá báo thức ${time}?`, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xoá',
+        style: 'destructive',
+        onPress: () => deleteAlarm(id),
+      },
+    ]);
+  };
+
   return (
     <View style={styles.container}>
       {/* Top Segmented Tabs */}
       <View style={styles.segmentedContainer}>
         <TouchableOpacity
-          style={[styles.segmentBtn, subTab === 'alarms' && styles.segmentBtnActive]}
+          style={[
+            styles.segmentBtn,
+            subTab === 'alarms' && styles.segmentBtnActive,
+          ]}
           onPress={() => setSubTab('alarms')}
           activeOpacity={0.8}
         >
-          <Bell size={16} color={subTab === 'alarms' ? '#FFFFFF' : Colors.textMuted} />
+          <Bell
+            size={16}
+            color={subTab === 'alarms' ? '#FFFFFF' : Colors.textMuted}
+          />
           <Text
             style={[
               styles.segmentText,
@@ -73,7 +152,10 @@ export const AlarmListScreen: React.FC = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.segmentBtn, subTab === 'todos' && styles.segmentBtnActive]}
+          style={[
+            styles.segmentBtn,
+            subTab === 'todos' && styles.segmentBtnActive,
+          ]}
           onPress={() => setSubTab('todos')}
           activeOpacity={0.8}
         >
@@ -100,12 +182,35 @@ export const AlarmListScreen: React.FC = () => {
         {/* Tab 1: Alarms */}
         {subTab === 'alarms' && (
           <>
+            {/* Quick Instant Test Alarm Button */}
+            <TouchableOpacity
+              style={styles.testAlarmBanner}
+              onPress={handleTestAlarm}
+              activeOpacity={0.8}
+            >
+              <View style={styles.testAlarmIconWrapper}>
+                <Sparkles size={20} color={Colors.warning} />
+              </View>
+              <View style={styles.testAlarmTextWrapper}>
+                <Text style={styles.testAlarmTitle}>
+                  Thử chuông ngay (Reo sau 2 giây)
+                </Text>
+                <Text style={styles.testAlarmSub}>
+                  Kiểm tra âm thanh & màn hình thức dậy tức thì
+                </Text>
+              </View>
+              <View style={styles.testAlarmActionIcon}>
+                <Play size={16} color={Colors.warning} />
+              </View>
+            </TouchableOpacity>
+
             {alarms.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Bell size={36} color={Colors.textMuted} />
                 <Text style={styles.emptyTitle}>Chưa có báo thức nào</Text>
                 <Text style={styles.emptySub}>
                   Hãy thử chạm vào micro và nói: "Đặt báo thức 6 giờ 30 sáng mai"
+                  hoặc bấm dấu (+) bên dưới.
                 </Text>
               </View>
             ) : (
@@ -123,12 +228,28 @@ export const AlarmListScreen: React.FC = () => {
                       </Text>
                       <Text style={styles.alarmLabel}>{alarm.label}</Text>
                     </View>
-                    <Switch
-                      value={alarm.isActive}
-                      onValueChange={() => toggleAlarm(alarm.id, !alarm.isActive)}
-                      trackColor={{ false: Colors.border, true: Colors.primary }}
-                      thumbColor={alarm.isActive ? '#FFFFFF' : Colors.textMuted}
-                    />
+                    <View style={styles.alarmActions}>
+                      <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => handleDeleteAlarm(alarm.id, alarm.time)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Trash2 size={18} color={Colors.textMuted} />
+                      </TouchableOpacity>
+                      <Switch
+                        value={alarm.isActive}
+                        onValueChange={() =>
+                          toggleAlarm(alarm.id, !alarm.isActive)
+                        }
+                        trackColor={{
+                          false: Colors.border,
+                          true: Colors.primary,
+                        }}
+                        thumbColor={
+                          alarm.isActive ? '#FFFFFF' : Colors.textMuted
+                        }
+                      />
+                    </View>
                   </View>
 
                   {/* Repeat Days Pills */}
@@ -251,9 +372,62 @@ export const AlarmListScreen: React.FC = () => {
       </ScrollView>
 
       {/* Floating Action Button (FAB) */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.85}
+        onPress={handleOpenAddModal}
+      >
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
+
+      {/* Quick Add Alarm Modal */}
+      <Modal
+        visible={showAddModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>⏰ Thêm báo thức mới</Text>
+
+            <Text style={styles.inputLabel}>Giờ báo thức (HH:mm)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={inputTime}
+              onChangeText={setInputTime}
+              placeholder="07:00"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="numbers-and-punctuation"
+              maxLength={5}
+            />
+
+            <Text style={styles.inputLabel}>Tên báo thức</Text>
+            <TextInput
+              style={styles.textInput}
+              value={inputLabel}
+              onChangeText={setInputLabel}
+              placeholder="Báo thức"
+              placeholderTextColor={Colors.textMuted}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setShowAddModal(false)}
+              >
+                <Text style={styles.cancelBtnText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmBtn}
+                onPress={handleSaveAlarm}
+              >
+                <Text style={styles.confirmBtnText}>Lưu báo thức</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -298,6 +472,41 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 110,
   },
+  testAlarmBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+  },
+  testAlarmIconWrapper: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  testAlarmTextWrapper: {
+    flex: 1,
+  },
+  testAlarmTitle: {
+    ...Typography.titleSmall,
+    color: Colors.warning,
+    fontWeight: '700',
+  },
+  testAlarmSub: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  testAlarmActionIcon: {
+    padding: 6,
+  },
   alarmCard: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
@@ -322,6 +531,14 @@ const styles = StyleSheet.create({
     ...Typography.bodyMedium,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  alarmActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deleteBtn: {
+    padding: 6,
   },
   repeatDaysRow: {
     flexDirection: 'row',
@@ -407,5 +624,68 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalTitle: {
+    ...Typography.titleLarge,
+    color: Colors.textPrimary,
+    marginBottom: 18,
+  },
+  inputLabel: {
+    ...Typography.labelMedium,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  textInput: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 24,
+  },
+  cancelBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  cancelBtnText: {
+    ...Typography.labelMedium,
+    color: Colors.textSecondary,
+  },
+  confirmBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+  },
+  confirmBtnText: {
+    ...Typography.labelMedium,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 });

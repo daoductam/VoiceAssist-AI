@@ -1,6 +1,7 @@
 import { Alarm } from '@domain/entities';
 import { alarmDao } from '@data/daos/alarm_dao';
 import { ValidationException, NotFoundException } from '@core/exceptions/app_exception';
+import { notificationService } from '@domain/services/notification_service';
 
 export class AlarmService {
   async getAll(): Promise<Alarm[]> {
@@ -47,18 +48,66 @@ export class AlarmService {
     };
 
     await alarmDao.insert(newAlarm);
+
+    // Automatically schedule local notification
+    if (newAlarm.isActive) {
+      try {
+        await notificationService.scheduleAlarm(newAlarm);
+      } catch (err) {
+        console.warn('Failed to schedule alarm notification:', err);
+      }
+    }
+
     return newAlarm;
   }
 
   async toggle(id: string, isActive: boolean): Promise<void> {
-    await this.getById(id);
+    const alarm = await this.getById(id);
     await alarmDao.toggleActive(id, isActive);
+
+    if (isActive) {
+      try {
+        await notificationService.scheduleAlarm({ ...alarm, isActive: true });
+      } catch (err) {
+        console.warn('Failed to schedule alarm notification on toggle:', err);
+      }
+    } else {
+      try {
+        await notificationService.cancel(id);
+      } catch (err) {
+        console.warn('Failed to cancel alarm notification on toggle:', err);
+      }
+    }
   }
 
   async delete(id: string): Promise<void> {
     await this.getById(id);
     await alarmDao.delete(id);
+    try {
+      await notificationService.cancel(id);
+    } catch (err) {
+      console.warn('Failed to cancel alarm notification on delete:', err);
+    }
+  }
+
+  /**
+   * Resync all active alarms into expo-notifications on app startup or reload
+   */
+  async syncAllActiveAlarms(): Promise<void> {
+    try {
+      const alarms = await this.getAll();
+      for (const alarm of alarms) {
+        if (alarm.isActive) {
+          await notificationService.scheduleAlarm(alarm);
+        } else {
+          await notificationService.cancel(alarm.id);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync active alarms:', err);
+    }
   }
 }
 
 export const alarmService = new AlarmService();
+

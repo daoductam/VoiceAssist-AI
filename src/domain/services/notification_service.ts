@@ -49,7 +49,13 @@ export class NotificationService {
     let finalStatus = existingStatus;
 
     if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+        },
+      });
       finalStatus = status;
     }
 
@@ -57,9 +63,10 @@ export class NotificationService {
   }
 
   /**
-   * Schedule a daily or recurring Alarm notification
+   * Schedule an Alarm notification
+   * Handles both one-time target dates and daily repetitions reliably across iOS & Android.
    */
-  async scheduleAlarm(alarm: Alarm, bodyMessage: string): Promise<string> {
+  async scheduleAlarm(alarm: Alarm, bodyMessage?: string): Promise<string> {
     await this.init();
 
     const [hourStr, minuteStr] = alarm.time.split(':');
@@ -69,25 +76,49 @@ export class NotificationService {
     // Cancel existing notification for this alarm if any
     await this.cancel(alarm.id);
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      identifier: alarm.id,
-      content: {
-        title: `⏰ ${alarm.label || 'Báo thức'}`,
-        body: bodyMessage || `Đã đến giờ ${alarm.time}! Thức dậy chào ngày mới nào.`,
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        data: {
-          type: 'alarm',
-          alarmId: alarm.id,
-          time: alarm.time,
-        },
+    const content: Notifications.NotificationContentInput = {
+      title: `⏰ ${alarm.label || 'Báo thức'}`,
+      body: bodyMessage || `Đã đến giờ ${alarm.time}! Thức dậy chào ngày mới nào.`,
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      data: {
+        type: 'alarm',
+        alarmId: alarm.id,
+        time: alarm.time,
       },
-      trigger: {
+    };
+
+    let trigger: Notifications.NotificationTriggerInput;
+
+    if (alarm.repeatDays && alarm.repeatDays.length > 0) {
+      // Recurring daily calendar trigger
+      trigger = {
         type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
         hour,
         minute,
-        repeats: alarm.repeatDays.length > 0,
-      },
+        repeats: true,
+      };
+    } else {
+      // One-time alarm: compute exact Date target
+      const now = new Date();
+      const targetDate = new Date();
+      targetDate.setHours(hour, minute, 0, 0);
+
+      // If target time has already passed today (or is within 5 seconds), schedule for tomorrow
+      if (targetDate.getTime() <= now.getTime() + 5000) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+
+      trigger = {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: targetDate,
+      };
+    }
+
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      identifier: alarm.id,
+      content,
+      trigger,
     });
 
     return notificationId;
@@ -96,7 +127,7 @@ export class NotificationService {
   /**
    * Schedule a one-time or repeating Reminder notification
    */
-  async scheduleReminder(reminder: Reminder, bodyMessage: string): Promise<string> {
+  async scheduleReminder(reminder: Reminder, bodyMessage?: string): Promise<string> {
     await this.init();
 
     const triggerDate = new Date(reminder.remindAt);
@@ -111,8 +142,8 @@ export class NotificationService {
     const notificationId = await Notifications.scheduleNotificationAsync({
       identifier: reminder.id,
       content: {
-        title: '🔔 Lời nhắc nhở',
-        body: bodyMessage || reminder.title,
+        title: `🔔 ${reminder.title}`,
+        body: bodyMessage || `Đến giờ thực hiện: ${reminder.title}`,
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.HIGH,
         data: {
@@ -127,6 +158,32 @@ export class NotificationService {
     });
 
     return notificationId;
+  }
+
+
+  /**
+   * Trigger an instant test alarm in N seconds
+   */
+  async triggerTestAlarm(seconds: number = 2): Promise<void> {
+    await this.init();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⏰ Báo thức thử nghiệm',
+        body: 'Thức dậy thôi nào bạn ơi! Chuông báo thức đã reo thành công! ☀️',
+        sound: 'default',
+        data: {
+          type: 'alarm',
+          time: new Date().toLocaleTimeString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: Math.max(1, seconds),
+      },
+    });
   }
 
   /**

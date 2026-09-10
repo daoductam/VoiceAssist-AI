@@ -10,7 +10,10 @@ import { ChatScreen } from '@features/chat/ChatScreen';
 import { SettingsScreen } from '@features/settings/SettingsScreen';
 import { AlarmRingingModal } from '@features/alarm/AlarmRingingModal';
 import * as Notifications from 'expo-notifications';
+import { setAudioModeAsync } from 'expo-audio';
 import { notificationService } from '@domain/services/notification_service';
+import { alarmService } from '@domain/services/alarm_service';
+import { reminderService } from '@domain/services/reminder_service';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
@@ -26,11 +29,33 @@ export default function App() {
   });
 
   useEffect(() => {
-    // Request notification permissions and initialize channels on startup
-    notificationService.requestPermissions();
+    // 1. Enable audio playback in silent mode on iOS
+    setAudioModeAsync({
+      playsInSilentMode: true,
+    }).catch((err) => console.warn('AudioMode error:', err));
 
-    // Listen for notification taps
-    const subscription = Notifications.addNotificationResponseReceivedListener(
+    // 2. Request notification permissions and resync all alarms & reminders
+    notificationService.requestPermissions().then(() => {
+      alarmService.syncAllActiveAlarms();
+      reminderService.syncAllActiveReminders();
+    });
+
+    // 3. Listen for incoming notification while app is in foreground
+    const receivedSub = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        const data = notification.request.content.data;
+        if (data && data.type === 'alarm') {
+          setRingingAlarm({
+            visible: true,
+            label: notification.request.content.title || 'Báo thức',
+            time: (data.time as string) || '06:30',
+          });
+        }
+      }
+    );
+
+    // 4. Listen for notification taps (when opened from lockscreen or notification tray)
+    const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data;
         if (data && data.type === 'alarm') {
@@ -44,7 +69,8 @@ export default function App() {
     );
 
     return () => {
-      subscription.remove();
+      receivedSub.remove();
+      responseSub.remove();
     };
   }, []);
 
