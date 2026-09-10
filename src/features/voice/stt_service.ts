@@ -1,13 +1,18 @@
-import { Audio } from 'expo-av';
+import {
+  AudioModule,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
 import { APP_CONSTANTS } from '@core/constants';
 import * as SecureStore from 'expo-secure-store';
 
 export class SttService {
-  private recording: Audio.Recording | null = null;
+  private recorder: InstanceType<typeof AudioModule.AudioRecorder> | null = null;
 
   async requestPermissions(): Promise<boolean> {
-    const { status } = await Audio.requestPermissionsAsync();
-    return status === 'granted';
+    const { granted } = await requestRecordingPermissionsAsync();
+    return granted;
   }
 
   async startRecording(): Promise<void> {
@@ -16,27 +21,25 @@ export class SttService {
       throw new Error('Chưa được cấp quyền sử dụng micro.');
     }
 
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
+    await setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
     });
 
-    const recording = new Audio.Recording();
-    await recording.prepareToRecordAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
-    );
-    await recording.startAsync();
-    this.recording = recording;
+    const recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+    this.recorder = recorder;
   }
 
   async stopRecordingAndTranscribe(): Promise<string> {
-    if (!this.recording) {
+    if (!this.recorder) {
       return '';
     }
 
-    await this.recording.stopAndUnloadAsync();
-    const uri = this.recording.getURI();
-    this.recording = null;
+    await this.recorder.stop();
+    const uri = this.recorder.uri;
+    this.recorder = null;
 
     if (!uri) {
       return '';
@@ -47,7 +50,6 @@ export class SttService {
   }
 
   private async transcribeWithGroq(audioUri: string): Promise<string> {
-    // 1. Get Groq API Key from secure store or environment
     let apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     try {
       const storedKey = await SecureStore.getItemAsync(
@@ -64,7 +66,6 @@ export class SttService {
       throw new Error('Không tìm thấy Groq API Key để nhận diện giọng nói.');
     }
 
-    // 2. Prepare FormData
     const formData = new FormData();
     const filename = audioUri.split('/').pop() || 'recording.m4a';
 
@@ -99,7 +100,7 @@ export class SttService {
   }
 
   isRecording(): boolean {
-    return this.recording !== null;
+    return this.recorder?.isRecording ?? false;
   }
 }
 
