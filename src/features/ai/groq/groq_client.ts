@@ -110,7 +110,7 @@ export class GroqClient {
 Nhiệm vụ của bạn là lắng nghe câu nói của người dùng và gọi function phù hợp (set_alarm, set_reminder, add_todo, query_schedule).
 Nếu người dùng nói chuyện phiếm hoặc hỏi thăm thông thường, hãy trả lời tự nhiên, ấm áp bằng tiếng Việt.`;
 
-    const response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
+    let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -127,6 +127,28 @@ Nếu người dùng nói chuyện phiếm hoặc hỏi thăm thông thường, 
         temperature: 0.1,
       }),
     });
+
+    // Fallback to secondary model if primary fails
+    if (!response.ok) {
+      console.warn('Primary LLM failed, trying secondary model qwen/qwen3.8-27b');
+      response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'qwen/qwen3.8-27b',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userInput },
+          ],
+          tools: GROQ_TOOLS,
+          tool_choice: 'auto',
+          temperature: 0.1,
+        }),
+      });
+    }
 
     if (!response.ok) {
       throw new Error(`Groq LLM Error (${response.status})`);
