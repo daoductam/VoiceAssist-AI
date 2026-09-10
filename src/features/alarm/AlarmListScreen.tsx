@@ -59,12 +59,15 @@ export const AlarmListScreen: React.FC = () => {
 
   // 1. Open ringing screen immediately (0s wait, no notification needed)
   const handleOpenAlarmDirectly = () => {
+    const nowTime = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
     openRingingAlarm({
-      label: 'Báo thức thử nghiệm',
-      time: new Date().toLocaleTimeString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      type: 'alarm',
+      label: 'Báo thức ban ngày',
+      time: nowTime,
+      spokenText: `Đã ${nowTime} rồi bạn ơi! Đến giờ nghỉ tay, uống ngụm nước và chuẩn bị hoàn thành mục tiêu nhé!`,
     });
   };
 
@@ -91,7 +94,7 @@ export const AlarmListScreen: React.FC = () => {
   const handleTestSpeech = async () => {
     try {
       await ttsService.speak(
-        'Chào buổi sáng bạn nhé! Một ngày mới tuyệt vời đang chờ đón bạn. Dậy thôi nào!'
+        'Xin chào bạn! Đây là giọng nói trợ lý AI thông minh từ VoiceAssist. Chúc bạn một ngày làm việc thật hiệu quả và tràn đầy niềm vui nhé!'
       );
     } catch (e) {
       Alert.alert('Lỗi âm thanh', 'Không thể phát giọng nói: ' + (e as Error).message);

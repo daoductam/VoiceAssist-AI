@@ -39,23 +39,46 @@ export default function App() {
     const receivedSub = Notifications.addNotificationReceivedListener(
       (notification) => {
         const data = notification.request.content.data;
-        if (data && data.type === 'alarm') {
+        if (data && (data.type === 'alarm' || data.type === 'reminder')) {
           openRingingAlarm({
-            label: notification.request.content.title || 'Báo thức',
-            time: (data.time as string) || '06:30',
+            type: data.type as 'alarm' | 'reminder',
+            id: (data.alarmId || data.reminderId) as string,
+            label:
+              (data.label as string) ||
+              notification.request.content.title ||
+              (data.type === 'reminder' ? 'Lời nhắc nhở' : 'Báo thức'),
+            time:
+              (data.time as string) ||
+              new Date().toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+            spokenText: data.spokenText as string,
           });
         }
       }
     );
 
     // 4. Listen for notification taps (when opened from lockscreen or notification tray)
+    // ZERO-FRICTION 1-TAP TO TALK: User taps banner -> immediately opens modal & plays voice
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data;
-        if (data && data.type === 'alarm') {
+        if (data && (data.type === 'alarm' || data.type === 'reminder')) {
           openRingingAlarm({
-            label: response.notification.request.content.title || 'Báo thức',
-            time: (data.time as string) || '06:30',
+            type: data.type as 'alarm' | 'reminder',
+            id: (data.alarmId || data.reminderId) as string,
+            label:
+              (data.label as string) ||
+              response.notification.request.content.title ||
+              (data.type === 'reminder' ? 'Lời nhắc nhở' : 'Báo thức'),
+            time:
+              (data.time as string) ||
+              new Date().toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+            spokenText: data.spokenText as string,
           });
         }
       }
@@ -75,23 +98,40 @@ export default function App() {
     }
   };
 
-  const handleDismissAlarm = () => {
+  const handleDismissAlarm = async () => {
+    if (ringingAlarm.type === 'reminder' && ringingAlarm.id) {
+      try {
+        await reminderService.complete(ringingAlarm.id, true);
+      } catch (err) {
+        console.warn('Failed to complete reminder:', err);
+      }
+    }
     closeRingingAlarm();
   };
 
   const handleSnoozeAlarm = () => {
+    const isReminder = ringingAlarm.type === 'reminder';
+    const snoozeLabel = ringingAlarm.label;
+    const snoozeType = ringingAlarm.type;
+    const snoozeTime = ringingAlarm.time;
+
     closeRingingAlarm();
-    // Schedule a 5-minute snooze notification
+    // Schedule a 10-minute snooze notification
     Notifications.scheduleNotificationAsync({
       content: {
-        title: '⏰ Báo thức lại (Snooze)',
-        body: 'Đã hết 5 phút báo lại rồi, dậy thôi nào!',
+        title: isReminder ? `🔔 ${snoozeLabel} (Nhắc lại)` : `⏰ ${snoozeTime} • ${snoozeLabel} (Báo lại)`,
+        body: `Đã hết thời gian hoãn cho "${snoozeLabel}". Chạm vào đây để hoàn thành ngay nhé!`,
         sound: 'default',
-        data: { type: 'alarm', time: ringingAlarm.time },
+        data: {
+          type: snoozeType,
+          label: snoozeLabel,
+          time: snoozeTime,
+          spokenText: `Đã hết thời gian hoãn cho ${snoozeLabel}. Hãy hoàn thành ngay bạn nhé!`,
+        },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 300,
+        seconds: 600, // 10 minutes
       },
     });
   };
@@ -124,8 +164,11 @@ export default function App() {
         />
         <AlarmRingingModal
           visible={ringingAlarm.visible}
+          type={ringingAlarm.type}
           alarmLabel={ringingAlarm.label}
           alarmTime={ringingAlarm.time}
+          greetingText={ringingAlarm.spokenText}
+          spokenText={ringingAlarm.spokenText}
           onDismiss={handleDismissAlarm}
           onSnooze={handleSnoozeAlarm}
         />

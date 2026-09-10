@@ -2,17 +2,28 @@ import { create } from 'zustand';
 import { Alarm } from '@domain/entities';
 import { alarmService } from '@domain/services/alarm_service';
 
+export interface RingingAlarmState {
+  visible: boolean;
+  type: 'alarm' | 'reminder';
+  id?: string;
+  label: string;
+  time: string;
+  spokenText?: string;
+}
+
 interface AlarmStoreState {
   alarms: Alarm[];
   loading: boolean;
   error: string | null;
 
-  ringingAlarm: {
-    visible: boolean;
-    label: string;
-    time: string;
-  };
-  openRingingAlarm: (params?: { label?: string; time?: string }) => void;
+  ringingAlarm: RingingAlarmState;
+  openRingingAlarm: (params?: {
+    type?: 'alarm' | 'reminder';
+    id?: string;
+    label?: string;
+    time?: string;
+    spokenText?: string;
+  }) => void;
   closeRingingAlarm: () => void;
 
   loadAlarms: () => Promise<void>;
@@ -34,6 +45,7 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
 
   ringingAlarm: {
     visible: false,
+    type: 'alarm',
     label: 'Báo thức buổi sáng',
     time: '06:30',
   },
@@ -42,13 +54,16 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
     set({
       ringingAlarm: {
         visible: true,
-        label: params?.label || 'Báo thức buổi sáng',
+        type: params?.type || 'alarm',
+        id: params?.id,
+        label: params?.label || (params?.type === 'reminder' ? 'Lời nhắc nhở' : 'Báo thức'),
         time:
           params?.time ||
           new Date().toLocaleTimeString('vi-VN', {
             hour: '2-digit',
             minute: '2-digit',
           }),
+        spokenText: params?.spokenText,
       },
     });
   },

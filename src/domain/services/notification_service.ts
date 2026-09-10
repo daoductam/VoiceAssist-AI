@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { Alarm, Reminder } from '@domain/entities';
+import { responseGenerator } from '@features/ai/response/response_generator';
+import { useSettingsStore } from '@shared/stores/useSettingsStore';
 
 // Configure foreground notification behavior
 Notifications.setNotificationHandler({
@@ -65,6 +67,7 @@ export class NotificationService {
   /**
    * Schedule an Alarm notification
    * Handles both one-time target dates and daily repetitions reliably across iOS & Android.
+   * Embeds rich conversational AI text in notification body and payload data for instant 1-tap TTS speech.
    */
   async scheduleAlarm(alarm: Alarm, bodyMessage?: string): Promise<string> {
     await this.init();
@@ -76,15 +79,28 @@ export class NotificationService {
     // Cancel existing notification for this alarm if any
     await this.cancel(alarm.id);
 
+    const tone = useSettingsStore.getState().toneStyle || 'friendly';
+    const alertInfo = responseGenerator.generateAlarmAlert(
+      alarm.label || 'Báo thức',
+      alarm.time,
+      tone
+    );
+
+    const title = alertInfo.title;
+    const body = bodyMessage || alertInfo.body;
+    const spokenText = alertInfo.spokenText;
+
     const content: Notifications.NotificationContentInput = {
-      title: `⏰ ${alarm.label || 'Báo thức'}`,
-      body: bodyMessage || `Đã đến giờ ${alarm.time}! Thức dậy chào ngày mới nào.`,
+      title,
+      body,
       sound: 'default',
       priority: Notifications.AndroidNotificationPriority.MAX,
       data: {
         type: 'alarm',
         alarmId: alarm.id,
         time: alarm.time,
+        label: alarm.label || 'Báo thức',
+        spokenText,
       },
     };
 
@@ -116,14 +132,15 @@ export class NotificationService {
         targetDate.setDate(targetDate.getDate() + 1);
       }
 
-      // Schedule consecutive burst (at T, T+10s, T+20s) so it rings and vibrates repeatedly
+      // Schedule consecutive burst (at T, T+8s, T+16s) so it rings and vibrates repeatedly
       for (let i = 0; i < 3; i++) {
-        const burstDate = new Date(targetDate.getTime() + i * 10000);
+        const burstDate = new Date(targetDate.getTime() + i * 8000);
         const burstId = await Notifications.scheduleNotificationAsync({
           identifier: `${alarm.id}_burst_${i}`,
           content: {
             ...content,
-            title: i === 0 ? content.title : `⏰ ${alarm.label || 'Báo thức'} (${i + 1}/3)`,
+            title: i === 0 ? content.title : `⏰ ${alarm.time} • ${alarm.label || 'Báo thức'} (${i + 1}/3)`,
+            body: i === 0 ? content.body : `Chuông báo thức đang reo! Chạm vào đây để nghe AI chào bạn ☀️`,
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -139,6 +156,7 @@ export class NotificationService {
 
   /**
    * Schedule a one-time or repeating Reminder notification
+   * Embeds rich conversational AI text in notification body and payload data for instant 1-tap TTS speech.
    */
   async scheduleReminder(reminder: Reminder, bodyMessage?: string): Promise<string> {
     await this.init();
@@ -152,54 +170,83 @@ export class NotificationService {
 
     await this.cancel(reminder.id);
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      identifier: reminder.id,
-      content: {
-        title: `🔔 ${reminder.title}`,
-        body: bodyMessage || `Đến giờ thực hiện: ${reminder.title}`,
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-        data: {
-          type: 'reminder',
-          reminderId: reminder.id,
-        },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: triggerDate,
-      },
+    const tone = useSettingsStore.getState().toneStyle || 'friendly';
+    const formattedTime = triggerDate.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
     });
+    const alertInfo = responseGenerator.generateReminderAlert(
+      reminder.title,
+      formattedTime,
+      tone
+    );
 
-    return notificationId;
+    const title = alertInfo.title;
+    const body = bodyMessage || alertInfo.body;
+    const spokenText = alertInfo.spokenText;
+
+    const content: Notifications.NotificationContentInput = {
+      title,
+      body,
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      data: {
+        type: 'reminder',
+        reminderId: reminder.id,
+        time: formattedTime,
+        label: reminder.title,
+        spokenText,
+      },
+    };
+
+    let primaryId = reminder.id;
+    // Schedule consecutive burst (T, T+8s) so it doesn't get missed during daytime
+    for (let i = 0; i < 2; i++) {
+      const burstDate = new Date(triggerDate.getTime() + i * 8000);
+      const burstId = await Notifications.scheduleNotificationAsync({
+        identifier: `${reminder.id}_burst_${i}`,
+        content: {
+          ...content,
+          title: i === 0 ? content.title : `🔔 ${formattedTime} • ${reminder.title} (Nhắc lại)`,
+          body: i === 0 ? content.body : `Đến giờ thực hiện rồi! Chạm vào đây để hoàn thành nhé 📌`,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: burstDate,
+        },
+      });
+      if (i === 0) primaryId = burstId;
+    }
+
+    return primaryId;
   }
 
   /**
-   * Trigger an instant test alarm in N seconds with consecutive burst rings
+   * Trigger an instant test alarm in N seconds with consecutive burst rings and rich speech
    */
   async triggerTestAlarm(seconds: number = 2): Promise<void> {
     await this.init();
 
-    const burstMessages = [
-      'Thức dậy thôi nào bạn ơi! Chuông báo thức đã reo! ☀️',
-      'Đã đến giờ rồi, mở mắt chào ngày mới thôi! ⏰',
-      'Dậy nào, một ngày mới tràn đầy năng lượng đang chờ bạn! ✨',
-      'Bấm vào thông báo này để vào màn hình thức dậy nhé! 🔔',
-    ];
+    const tone = useSettingsStore.getState().toneStyle || 'friendly';
+    const nowTime = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const alertInfo = responseGenerator.generateAlarmAlert('Thử nghiệm báo thức', nowTime, tone);
 
-    for (let i = 0; i < burstMessages.length; i++) {
+    for (let i = 0; i < 3; i++) {
       await Notifications.scheduleNotificationAsync({
         identifier: `test_alarm_burst_${i}`,
         content: {
-          title: `⏰ Báo thức (${i + 1}/${burstMessages.length})`,
-          body: burstMessages[i],
+          title: i === 0 ? alertInfo.title : `⏰ ${nowTime} • Thử chuông (${i + 1}/3)`,
+          body: i === 0 ? alertInfo.body : 'Chạm vào thông báo này để nghe AI cất giọng ngay lập tức! ✨',
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority.MAX,
           data: {
             type: 'alarm',
-            time: new Date().toLocaleTimeString('vi-VN', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
+            time: nowTime,
+            label: 'Thử nghiệm báo thức',
+            spokenText: alertInfo.spokenText,
           },
         },
         trigger: {

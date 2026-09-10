@@ -11,35 +11,48 @@ import {
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { ttsService } from '@features/voice/tts_service';
-import { Sun, BellOff, Clock, Sparkles } from 'lucide-react-native';
+import { Sun, Bell, BellOff, Clock, Sparkles, CheckCircle2 } from 'lucide-react-native';
 import * as Notifications from 'expo-notifications';
 
 interface AlarmRingingModalProps {
   visible: boolean;
+  type?: 'alarm' | 'reminder';
   alarmLabel?: string;
   alarmTime?: string;
   greetingText?: string;
+  spokenText?: string;
   onDismiss: () => void;
   onSnooze: () => void;
 }
 
 export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
   visible,
-  alarmLabel = 'Báo thức buổi sáng',
+  type = 'alarm',
+  alarmLabel = 'Báo thức',
   alarmTime = '06:30',
-  greetingText = 'Chào buổi sáng bạn nhé! Một ngày mới tuyệt vời đang chờ đón bạn. Dậy thôi nào! ☀️',
+  greetingText,
+  spokenText,
   onDismiss,
   onSnooze,
 }) => {
   const [pulseAnim] = useState(new Animated.Value(1));
+  const isReminder = type === 'reminder';
+
+  // Compute effective greeting and spoken texts
+  const effectiveGreeting =
+    greetingText ||
+    (isReminder
+      ? `Đã đến giờ thực hiện: "${alarmLabel}". Hãy dành chút thời gian hoàn thành ngay nhé! 📌`
+      : 'Chào bạn nhé! Đã đến giờ báo thức rồi. Dậy thôi nào! ☀️');
+
+  const effectiveSpeech = spokenText || effectiveGreeting;
 
   useEffect(() => {
     if (visible) {
       // Dismiss any remaining notification banners from tray
       Notifications.dismissAllNotificationsAsync().catch(() => {});
 
-      // Start persistent rhythmic alarm vibration
-      // [wait 0ms, vibrate 800ms, pause 400ms, vibrate 800ms, pause 400ms]
+      // Start persistent rhythmic vibration
       Vibration.vibrate([0, 800, 400, 800, 400], true);
 
       let isMounted = true;
@@ -47,22 +60,24 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
       // Continuously loop speech reminder so it doesn't stop until dismissed
       const runSpeechLoop = async () => {
         while (isMounted) {
-          await ttsService.speak(greetingText);
+          await ttsService.speak(effectiveSpeech);
           if (!isMounted) break;
-          // Wait 3 seconds before next wake-up call
-          await new Promise((r) => setTimeout(r, 3000));
+          // Wait 3.5 seconds before repeating
+          await new Promise((r) => setTimeout(r, 3500));
           if (!isMounted) break;
           await ttsService.speak(
-            `Báo thức ${alarmTime}! Đã đến giờ thức dậy rồi bạn ơi. Hãy mở mắt chào ngày mới nhé!`
+            isReminder
+              ? `Lời nhắc lúc ${alarmTime}: ${alarmLabel}. Chạm vào nút hoàn thành nếu bạn đã xong việc nhé!`
+              : `Báo thức ${alarmTime}! Đã đến giờ rồi bạn ơi. Hãy mở mắt chào ngày mới nhé!`
           );
           if (!isMounted) break;
-          await new Promise((r) => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 3500));
         }
       };
 
       runSpeechLoop();
 
-      // Start gentle pulsing sun animation
+      // Start gentle pulsing animation
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -86,7 +101,7 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
         ttsService.stop();
       };
     }
-  }, [visible, greetingText, alarmTime, pulseAnim]);
+  }, [visible, effectiveSpeech, alarmTime, alarmLabel, isReminder, pulseAnim]);
 
   const handleDismiss = () => {
     Vibration.cancel();
@@ -108,13 +123,17 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
         {/* Ambient Top Glow */}
         <Animated.View
           style={[
-            styles.sunHalo,
+            isReminder ? styles.reminderHalo : styles.sunHalo,
             {
               transform: [{ scale: pulseAnim }],
             },
           ]}
         >
-          <Sun size={68} color={Colors.warning} />
+          {isReminder ? (
+            <Bell size={64} color={Colors.secondary} />
+          ) : (
+            <Sun size={68} color={Colors.warning} />
+          )}
         </Animated.View>
 
         {/* Alarm Title & Big Clock */}
@@ -123,35 +142,69 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
           <Text style={styles.clockDisplay}>{alarmTime}</Text>
         </View>
 
-        {/* Empathetic Greeting Box */}
+        {/* Empathetic Greeting / Dialogue Card */}
         <View style={styles.greetingCard}>
           <View style={styles.greetingHeader}>
-            <Sparkles size={16} color={Colors.ambientPurple} />
-            <Text style={styles.greetingTag}>LỜI CHÀO BUỔI SÁNG NHÂN ÁI</Text>
+            <Sparkles
+              size={16}
+              color={isReminder ? Colors.secondary : Colors.ambientPurple}
+            />
+            <Text
+              style={[
+                styles.greetingTag,
+                isReminder && { color: Colors.secondary },
+              ]}
+            >
+              {isReminder ? 'LỜI NHẮC TỪ TRỢ LÝ AI' : 'LỜI CHÀO BUỔI SÁNG NHÂN ÁI'}
+            </Text>
           </View>
-          <Text style={styles.greetingBody}>{greetingText}</Text>
+          <Text style={styles.greetingBody}>{effectiveGreeting}</Text>
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionContainer}>
-          {/* Dismiss button ("Tôi đã dậy") */}
+          {/* Dismiss button */}
           <TouchableOpacity
-            style={styles.dismissBtn}
+            style={[
+              styles.dismissBtn,
+              isReminder && { backgroundColor: Colors.secondary },
+            ]}
             onPress={handleDismiss}
             activeOpacity={0.85}
           >
-            <BellOff size={22} color="#FFFFFF" />
-            <Text style={styles.dismissBtnText}>Tôi đã dậy rồi ✨</Text>
+            {isReminder ? (
+              <CheckCircle2 size={22} color="#070810" />
+            ) : (
+              <BellOff size={22} color="#FFFFFF" />
+            )}
+            <Text
+              style={[
+                styles.dismissBtnText,
+                isReminder && { color: '#070810' },
+              ]}
+            >
+              {isReminder ? 'Đã hoàn thành ✨' : 'Tôi đã dậy rồi ✨'}
+            </Text>
           </TouchableOpacity>
 
-          {/* Snooze button ("Báo lại 5 phút") */}
+          {/* Snooze button */}
           <TouchableOpacity
             style={styles.snoozeBtn}
             onPress={handleSnooze}
             activeOpacity={0.8}
           >
-            <Clock size={18} color={Colors.warning} />
-            <Text style={styles.snoozeBtnText}>Báo lại 5 phút</Text>
+            <Clock
+              size={18}
+              color={isReminder ? Colors.secondary : Colors.warning}
+            />
+            <Text
+              style={[
+                styles.snoozeBtnText,
+                isReminder && { color: Colors.secondary },
+              ]}
+            >
+              {isReminder ? 'Nhắc lại sau 10 phút' : 'Báo lại 5 phút'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -179,6 +232,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(245, 158, 11, 0.3)',
   },
+  reminderHalo: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+  },
   timeSection: {
     alignItems: 'center',
   },
@@ -186,6 +250,7 @@ const styles = StyleSheet.create({
     ...Typography.titleMedium,
     color: Colors.textSecondary,
     marginBottom: 8,
+    textAlign: 'center',
   },
   clockDisplay: {
     ...Typography.displayLarge,
