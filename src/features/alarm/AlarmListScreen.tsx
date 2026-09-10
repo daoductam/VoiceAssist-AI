@@ -34,11 +34,19 @@ type SubTab = 'alarms' | 'reminders' | 'todos';
 export const AlarmListScreen: React.FC = () => {
   const [subTab, setSubTab] = useState<SubTab>('alarms');
 
-  // Add Alarm Modal State
+  // Add Modal State
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [inputTime, setInputTime] = useState<string>('');
   const [inputLabel, setInputLabel] = useState<string>('Báo thức');
   const [testCountdown, setTestCountdown] = useState<number | null>(null);
+
+  // Reminder State
+  const [inputReminderTitle, setInputReminderTitle] = useState<string>('');
+  const [inputReminderTime, setInputReminderTime] = useState<string>('');
+  const [reminderCountdown, setReminderCountdown] = useState<number | null>(null);
+
+  // Todo State
+  const [inputTodoTitle, setInputTodoTitle] = useState<string>('');
 
   const {
     alarms,
@@ -48,8 +56,20 @@ export const AlarmListScreen: React.FC = () => {
     createAlarm,
     openRingingAlarm,
   } = useAlarmStore();
-  const { reminders, loadReminders, completeReminder } = useReminderStore();
-  const { todos, loadTodos, toggleTodo } = useTodoStore();
+  const {
+    reminders,
+    loadReminders,
+    completeReminder,
+    createReminder,
+    deleteReminder,
+  } = useReminderStore();
+  const {
+    todos,
+    loadTodos,
+    toggleTodo,
+    createTodo,
+    deleteTodo,
+  } = useTodoStore();
 
   useEffect(() => {
     loadAlarms();
@@ -101,13 +121,56 @@ export const AlarmListScreen: React.FC = () => {
     }
   };
 
+  // 4. Test Reminder screen directly (0s wait)
+  const handleOpenReminderDirectly = () => {
+    const nowTime = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    openRingingAlarm({
+      type: 'reminder',
+      label: 'Uống nước nạp năng lượng',
+      time: nowTime,
+      spokenText: `Ting ting! Đã ${nowTime} rồi bạn ơi. Đến giờ uống một cốc nước để nạp lại năng lượng rồi nè!`,
+    });
+  };
+
+  // 5. Schedule test reminder in 3s
+  const handleTestReminderScheduled = async () => {
+    try {
+      await notificationService.triggerTestReminder(3);
+      setReminderCountdown(3);
+      const timer = setInterval(() => {
+        setReminderCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            clearInterval(timer);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể kích hoạt chuông thử: ' + (e as Error).message);
+    }
+  };
+
   const handleOpenAddModal = () => {
-    // Default time = 2 minutes from now
-    const d = new Date(Date.now() + 2 * 60 * 1000);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    setInputTime(`${hh}:${mm}`);
-    setInputLabel('Báo thức');
+    const now = new Date();
+    if (subTab === 'alarms') {
+      const d = new Date(now.getTime() + 2 * 60 * 1000);
+      setInputTime(
+        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      );
+      setInputLabel('Báo thức');
+    } else if (subTab === 'reminders') {
+      const d = new Date(now.getTime() + 15 * 60 * 1000);
+      setInputReminderTime(
+        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      );
+      setInputReminderTitle('');
+    } else {
+      setInputTodoTitle('');
+    }
     setShowAddModal(true);
   };
 
@@ -133,6 +196,63 @@ export const AlarmListScreen: React.FC = () => {
     }
   };
 
+  const handleSaveReminder = async () => {
+    if (!inputReminderTitle.trim()) {
+      Alert.alert('Chưa nhập nội dung', 'Vui lòng nhập nội dung lời nhắc.');
+      return;
+    }
+
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!timeRegex.test(inputReminderTime)) {
+      Alert.alert(
+        'Giờ không hợp lệ',
+        'Vui lòng nhập định dạng giờ HH:mm (ví dụ: 15:30).'
+      );
+      return;
+    }
+
+    const [hStr, mStr] = inputReminderTime.split(':');
+    const target = new Date();
+    target.setHours(parseInt(hStr, 10), parseInt(mStr, 10), 0, 0);
+    if (target.getTime() <= Date.now() + 5000) {
+      target.setDate(target.getDate() + 1);
+    }
+
+    try {
+      await createReminder({
+        title: inputReminderTitle.trim(),
+        remindAt: target.toISOString(),
+      });
+      setShowAddModal(false);
+      Alert.alert(
+        'Thành công 🎉',
+        `Đã lưu lời nhắc "${inputReminderTitle.trim()}" lúc ${inputReminderTime}!`
+      );
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể tạo lời nhắc: ' + (e as Error).message);
+    }
+  };
+
+  const handleSaveTodo = async () => {
+    if (!inputTodoTitle.trim()) {
+      Alert.alert('Chưa nhập công việc', 'Vui lòng nhập nội dung việc cần làm.');
+      return;
+    }
+
+    try {
+      await createTodo({
+        title: inputTodoTitle.trim(),
+      });
+      setShowAddModal(false);
+      Alert.alert(
+        'Thành công 🎉',
+        `Đã thêm "${inputTodoTitle.trim()}" vào danh sách To-do!`
+      );
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể thêm việc: ' + (e as Error).message);
+    }
+  };
+
   const handleDeleteAlarm = (id: string, time: string) => {
     Alert.alert('Xoá báo thức', `Bạn có chắc muốn xoá báo thức ${time}?`, [
       { text: 'Hủy', style: 'cancel' },
@@ -140,6 +260,28 @@ export const AlarmListScreen: React.FC = () => {
         text: 'Xoá',
         style: 'destructive',
         onPress: () => deleteAlarm(id),
+      },
+    ]);
+  };
+
+  const handleDeleteReminder = (id: string, title: string) => {
+    Alert.alert('Xoá lời nhắc', `Bạn có chắc muốn xoá lời nhắc "${title}"?`, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xoá',
+        style: 'destructive',
+        onPress: () => deleteReminder(id),
+      },
+    ]);
+  };
+
+  const handleDeleteTodo = (id: string, title: string) => {
+    Alert.alert('Xoá việc cần làm', `Bạn có chắc muốn xoá việc "${title}"?`, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xoá',
+        style: 'destructive',
+        onPress: () => deleteTodo(id),
       },
     ]);
   };
@@ -365,47 +507,116 @@ export const AlarmListScreen: React.FC = () => {
         {/* Tab 2: Reminders */}
         {subTab === 'reminders' && (
           <>
+            {/* Quick Testing Control Center for Reminders */}
+            <View style={styles.testControlCard}>
+              {/* Button A: Open Reminder Screen Directly */}
+              <TouchableOpacity
+                style={[styles.openDirectBtn, styles.openDirectBtnCyan]}
+                onPress={handleOpenReminderDirectly}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.openDirectIconWrapper, styles.openDirectIconWrapperCyan]}>
+                  <Clock size={20} color="#070810" />
+                </View>
+                <View style={styles.openDirectTextWrapper}>
+                  <Text style={styles.openDirectTitle}>
+                    Mở màn hình Lời nhắc (Thử ngay)
+                  </Text>
+                  <Text style={styles.openDirectSub}>
+                    Chuông báo Cyan & AI đọc to lời nhắc tức thì
+                  </Text>
+                </View>
+                <Play size={18} color={Colors.secondary} />
+              </TouchableOpacity>
+
+              {/* Sub Row: Voice test & Lockscreen reminder test */}
+              <View style={styles.subTestingRow}>
+                <TouchableOpacity
+                  style={styles.subTestBtn}
+                  onPress={handleTestSpeech}
+                  activeOpacity={0.8}
+                >
+                  <Volume2 size={16} color={Colors.secondary} />
+                  <Text style={styles.subTestBtnText}>Nghe giọng nói AI</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.subTestBtn,
+                    reminderCountdown !== null && styles.subTestBtnActive,
+                  ]}
+                  onPress={handleTestReminderScheduled}
+                  activeOpacity={0.8}
+                >
+                  <Clock
+                    size={16}
+                    color={reminderCountdown !== null ? '#FFFFFF' : Colors.secondary}
+                  />
+                  <Text
+                    style={[
+                      styles.subTestBtnText,
+                      reminderCountdown !== null && styles.subTestBtnTextActive,
+                    ]}
+                  >
+                    {reminderCountdown !== null
+                      ? `Nhắc sau ${reminderCountdown}s (Khoá máy)`
+                      : 'Hẹn lời nhắc 3s'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {reminders.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Clock size={36} color={Colors.textMuted} />
                 <Text style={styles.emptyTitle}>Chưa có lời nhắc nào</Text>
                 <Text style={styles.emptySub}>
-                  Hãy thử nói: "Nhắc tôi uống nước sau 30 phút nữa"
+                  Hãy thử nói: "Nhắc tôi uống nước sau 30 phút nữa" hoặc bấm nút (+) bên dưới.
                 </Text>
               </View>
             ) : (
               reminders.map((reminder) => (
-                <TouchableOpacity
-                  key={reminder.id}
-                  style={styles.itemCard}
-                  onPress={() =>
-                    completeReminder(reminder.id, !reminder.isCompleted)
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Clock
-                    size={20}
-                    color={
-                      reminder.isCompleted ? Colors.textMuted : Colors.secondary
+                <View key={reminder.id} style={styles.itemCard}>
+                  <TouchableOpacity
+                    style={styles.itemCardContent}
+                    onPress={() =>
+                      completeReminder(reminder.id, !reminder.isCompleted)
                     }
-                  />
-                  <View style={styles.itemTextWrapper}>
-                    <Text
-                      style={[
-                        styles.itemTitle,
-                        reminder.isCompleted && styles.itemTitleCompleted,
-                      ]}
-                    >
-                      {reminder.title}
-                    </Text>
-                    <Text style={styles.itemSub}>
-                      {new Date(reminder.remindAt).toLocaleTimeString('vi-VN', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                    activeOpacity={0.7}
+                  >
+                    <Clock
+                      size={20}
+                      color={
+                        reminder.isCompleted ? Colors.textMuted : Colors.secondary
+                      }
+                    />
+                    <View style={styles.itemTextWrapper}>
+                      <Text
+                        style={[
+                          styles.itemTitle,
+                          reminder.isCompleted && styles.itemTitleCompleted,
+                        ]}
+                      >
+                        {reminder.title}
+                      </Text>
+                      <Text style={styles.itemSub}>
+                        {new Date(reminder.remindAt).toLocaleTimeString('vi-VN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() =>
+                      handleDeleteReminder(reminder.id, reminder.title)
+                    }
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Trash2 size={18} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
               ))
             )}
           </>
@@ -419,32 +630,40 @@ export const AlarmListScreen: React.FC = () => {
                 <CheckCircle2 size={36} color={Colors.textMuted} />
                 <Text style={styles.emptyTitle}>Chưa có việc cần làm</Text>
                 <Text style={styles.emptySub}>
-                  Hãy thử nói: "Thêm vào danh sách mua rau củ hôm nay"
+                  Hãy thử nói: "Thêm vào danh sách mua rau củ hôm nay" hoặc bấm nút (+) bên dưới.
                 </Text>
               </View>
             ) : (
               todos.map((todo) => (
-                <TouchableOpacity
-                  key={todo.id}
-                  style={styles.itemCard}
-                  onPress={() => toggleTodo(todo.id, !todo.isDone)}
-                  activeOpacity={0.7}
-                >
-                  <CheckCircle2
-                    size={20}
-                    color={todo.isDone ? Colors.success : Colors.textMuted}
-                  />
-                  <View style={styles.itemTextWrapper}>
-                    <Text
-                      style={[
-                        styles.itemTitle,
-                        todo.isDone && styles.itemTitleCompleted,
-                      ]}
-                    >
-                      {todo.title}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                <View key={todo.id} style={styles.itemCard}>
+                  <TouchableOpacity
+                    style={styles.itemCardContent}
+                    onPress={() => toggleTodo(todo.id, !todo.isDone)}
+                    activeOpacity={0.7}
+                  >
+                    <CheckCircle2
+                      size={20}
+                      color={todo.isDone ? Colors.success : Colors.textMuted}
+                    />
+                    <View style={styles.itemTextWrapper}>
+                      <Text
+                        style={[
+                          styles.itemTitle,
+                          todo.isDone && styles.itemTitleCompleted,
+                        ]}
+                      >
+                        {todo.title}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => handleDeleteTodo(todo.id, todo.title)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Trash2 size={18} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
               ))
             )}
           </>
@@ -460,7 +679,7 @@ export const AlarmListScreen: React.FC = () => {
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* Quick Add Alarm Modal */}
+      {/* Dynamic Add Modal */}
       <Modal
         visible={showAddModal}
         transparent
@@ -469,42 +688,122 @@ export const AlarmListScreen: React.FC = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>⏰ Thêm báo thức mới</Text>
+            {/* Form for Alarms */}
+            {subTab === 'alarms' && (
+              <>
+                <Text style={styles.modalTitle}>⏰ Thêm báo thức mới</Text>
 
-            <Text style={styles.inputLabel}>Giờ báo thức (HH:mm)</Text>
-            <TextInput
-              style={styles.textInput}
-              value={inputTime}
-              onChangeText={setInputTime}
-              placeholder="07:00"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-              maxLength={5}
-            />
+                <Text style={styles.inputLabel}>Giờ báo thức (HH:mm)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={inputTime}
+                  onChangeText={setInputTime}
+                  placeholder="07:00"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={5}
+                />
 
-            <Text style={styles.inputLabel}>Tên báo thức</Text>
-            <TextInput
-              style={styles.textInput}
-              value={inputLabel}
-              onChangeText={setInputLabel}
-              placeholder="Báo thức"
-              placeholderTextColor={Colors.textMuted}
-            />
+                <Text style={styles.inputLabel}>Tên báo thức</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={inputLabel}
+                  onChangeText={setInputLabel}
+                  placeholder="Báo thức sáng"
+                  placeholderTextColor={Colors.textMuted}
+                />
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setShowAddModal(false)}
-              >
-                <Text style={styles.cancelBtnText}>Hủy</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={handleSaveAlarm}
-              >
-                <Text style={styles.confirmBtnText}>Lưu báo thức</Text>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => setShowAddModal(false)}
+                  >
+                    <Text style={styles.cancelBtnText}>Hủy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.confirmBtn}
+                    onPress={handleSaveAlarm}
+                  >
+                    <Text style={styles.confirmBtnText}>Lưu báo thức</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {/* Form for Reminders */}
+            {subTab === 'reminders' && (
+              <>
+                <Text style={styles.modalTitle}>🔔 Thêm lời nhắc mới</Text>
+
+                <Text style={styles.inputLabel}>Nội dung lời nhắc</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={inputReminderTitle}
+                  onChangeText={setInputReminderTitle}
+                  placeholder="Uống nước, đi họp, tắt bếp..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                <Text style={styles.inputLabel}>Giờ nhắc (HH:mm)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={inputReminderTime}
+                  onChangeText={setInputReminderTime}
+                  placeholder="15:30"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={5}
+                />
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => setShowAddModal(false)}
+                  >
+                    <Text style={styles.cancelBtnText}>Hủy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, { backgroundColor: Colors.secondary }]}
+                    onPress={handleSaveReminder}
+                  >
+                    <Text style={[styles.confirmBtnText, { color: '#070810' }]}>
+                      Lưu lời nhắc
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {/* Form for Todos */}
+            {subTab === 'todos' && (
+              <>
+                <Text style={styles.modalTitle}>✅ Thêm việc cần làm</Text>
+
+                <Text style={styles.inputLabel}>Nội dung công việc</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={inputTodoTitle}
+                  onChangeText={setInputTodoTitle}
+                  placeholder="Mua tài liệu, dọn bàn làm việc..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => setShowAddModal(false)}
+                  >
+                    <Text style={styles.cancelBtnText}>Hủy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, { backgroundColor: Colors.success }]}
+                    onPress={handleSaveTodo}
+                  >
+                    <Text style={styles.confirmBtnText}>Thêm vào To-do</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -574,6 +873,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  openDirectBtnCyan: {
+    backgroundColor: 'rgba(56, 189, 248, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+    shadowColor: Colors.secondary,
+  },
   openDirectIconWrapper: {
     width: 34,
     height: 34,
@@ -582,6 +887,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
+  },
+  openDirectIconWrapperCyan: {
+    backgroundColor: Colors.secondary,
   },
   openDirectTextWrapper: {
     flex: 1,
@@ -686,12 +994,18 @@ const styles = StyleSheet.create({
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: Colors.surface,
     borderRadius: 14,
     padding: 16,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  itemCardContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   itemTextWrapper: {
     marginLeft: 12,

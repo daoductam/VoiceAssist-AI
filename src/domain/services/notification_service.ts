@@ -258,6 +258,46 @@ export class NotificationService {
   }
 
   /**
+   * Trigger an instant test reminder in N seconds with rich speech
+   */
+  async triggerTestReminder(seconds: number = 2): Promise<void> {
+    await this.init();
+
+    const tone = useSettingsStore.getState().toneStyle || 'friendly';
+    const nowTime = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const alertInfo = responseGenerator.generateReminderAlert(
+      'Uống nước bổ sung năng lượng',
+      nowTime,
+      tone
+    );
+
+    for (let i = 0; i < 2; i++) {
+      await Notifications.scheduleNotificationAsync({
+        identifier: `test_reminder_burst_${i}`,
+        content: {
+          title: i === 0 ? alertInfo.title : `🔔 ${nowTime} • Thử lời nhắc (${i + 1}/2)`,
+          body: i === 0 ? alertInfo.body : 'Chạm vào thông báo này để nghe AI đọc lời nhắc nhé! 📌',
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+          data: {
+            type: 'reminder',
+            time: nowTime,
+            label: 'Uống nước bổ sung năng lượng',
+            spokenText: alertInfo.spokenText,
+          },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: Math.max(1, seconds + i * 4),
+        },
+      });
+    }
+  }
+
+  /**
    * Cancel scheduled notification by ID
    */
   async cancel(identifier: string): Promise<void> {
@@ -266,6 +306,7 @@ export class NotificationService {
       for (let i = 0; i < 5; i++) {
         await Notifications.cancelScheduledNotificationAsync(`${identifier}_burst_${i}`);
         await Notifications.cancelScheduledNotificationAsync(`test_alarm_burst_${i}`);
+        await Notifications.cancelScheduledNotificationAsync(`test_reminder_burst_${i}`);
       }
     } catch {
       // Ignore if doesn't exist
