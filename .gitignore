@@ -7,10 +7,21 @@
 .DS_Store
 Thumbs.db
 
+# Environment variables & secrets
+.env
+.env*.local
+*.env
+
+# Dependencies & Build
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Native builds
+android/
+ios/
+
 # Agents / AI config (keep .agents/ but ignore local state)
 .codegraph/
-
-# Dependencies (will be added when Flutter project is initialized)
-# build/
-# .dart_tool/
-# .packages

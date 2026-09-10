@@ -1,31 +1,47 @@
 # AGENTS.md
 
 ## Project Overview
-**Hệ thống số hóa đơn hàng (Sale Order Digitization) bằng OCR** là giải pháp tự động hóa quy trình xử lý đơn đặt hàng (Sale Order) từ chứng từ ảnh chụp/scan/PDF. Hệ thống tự động nhận dạng chữ (OCR), chuẩn hóa dữ liệu theo rule nghiệp vụ, đối chiếu fuzzy matching với danh mục chủ (khách hàng, sản phẩm), tính điểm tin cậy (confidence score) để auto-approve hoặc chuyển admin duyệt tay trước khi tạo đơn hàng chính thức. Ngoài ra hệ thống còn tích hợp thông báo real-time qua Firebase (FCM) và cung cấp trang Dashboard báo cáo thống kê.
+**VoiceAssist AI** là ứng dụng trợ lý giọng nói thông minh chuyên biệt cho việc quản lý **báo thức, lời nhắc và lịch trình cá nhân bằng Tiếng Việt**. Ứng dụng mang đến trải nghiệm **đánh thức & nhắc nhở nhân ái (Empathetic & Ambient)**: giọng nói tự nhiên, lời chào buổi sáng tràn đầy năng lượng tích cực, cập nhật thời tiết và tóm tắt lịch trình ngay khi bạn thức giấc.
 
 ## Tech Stack & Tools
-- **Documentation**: Markdown, Mermaid.js, PlantUML (mô hình hóa quy trình nghiệp vụ, sơ đồ luồng, kiến trúc hệ thống).
-- **Backend Service**: Java Spring Boot (REST API, business logic, phân quyền Google OAuth2, rule engine, validation).
-- **OCR Microservice**: Python (VietOCR), REST API riêng phục vụ nhận dạng văn bản tiếng Việt từ chứng từ.
-- **Async Processing & Message Queue**: Apache Kafka (xử lý bất đồng bộ job OCR, retry mechanism, dead-letter queue).
-- **Cache & Performance**: Redis (cache kết quả OCR, dữ liệu tổng hợp dashboard).
-- **Database**: Relational Database (lưu trữ thông tin đơn hàng, master data khách hàng/sản phẩm, audit log).
-- **Authentication & Notification**: Google OAuth2, Firebase Cloud Messaging (FCM).
+- **Framework**: React Native + Expo (TypeScript strict mode).
+- **State Management**: Zustand (Clean stores for alarms, reminders, todos, settings).
+- **Database**: `expo-sqlite` (Local-first architecture, DAOs pattern, safe offline storage).
+- **Voice & Speech**:
+  - **STT (Speech-to-Text)**: Groq Whisper API (`whisper-large-v3`, ~150ms latency) + on-device fallback.
+  - **TTS (Text-to-Speech)**: `expo-speech` (offline Vietnamese `vi-VN`).
+  - **Audio Recording**: `expo-av`.
+- **AI Intent & Function Calling**:
+  - **Online LLM**: Groq Cloud API (`llama-3.3-70b-versatile` / `llama-3.1-8b-instant`) với OpenAI Tool/Function Calling chuẩn để trích xuất ý định và thông số.
+  - **Offline NLU**: Bộ bóc tách ngữ nghĩa Regex nội bộ Tiếng Việt (`src/features/ai/nlu/rule_based_parser.ts`) và bộ bóc tách thời gian (`src/core/utils/vietnamese_time_parser.ts`).
+- **Notifications**: `expo-notifications` (lập lịch chuông báo thức & thông báo nhắc việc).
+- **Security**: `expo-secure-store` (mã hóa lưu trữ Groq API key trên thiết bị).
+- **Design System & Icons**: **Midnight Synapse** (OLED Dark Mode, xem chi tiết tại `DESIGN.md`), `lucide-react-native`.
 
 ## Project Structure
 ### Workspace Directories
-- `sprint-docs/`: Tài liệu đặc tả và kế hoạch thực thi chi tiết theo từng Sprint (ví dụ: `sprint-1-sale-order-ocr-v2.md`).
-- `.agents/`: Cấu hình AI Agent (workflows, rules, tuyển tập skills hỗ trợ phát triển dự án).
-- `README.md`: Tài liệu đặc tả tổng quan hệ thống, luồng nghiệp vụ, yêu cầu chức năng & phi chức năng.
-- `AGENTS.md`: Hướng dẫn tổng quan và ngữ cảnh dự án dành cho AI Agents.
+- `src/core/`: Hằng số, utils xử lý thời gian Tiếng Việt, Design tokens (`colors.ts`, `typography.ts`).
+- `src/data/`: Cơ sở dữ liệu SQLite (`database.ts`) và các DAOs (`AlarmDao`, `ReminderDao`, `TodoDao`, `ConversationLogDao`).
+- `src/domain/`: Entities, Interfaces, Enums và DTOs.
+- `src/features/`: Các module chức năng theo kiến trúc Feature-first:
+  - `ai/`: Groq client, tool calling, offline rule-based parser, template generator (3 tones: Friendly, Professional, Cute).
+  - `alarm/`: Quản lý báo thức, danh sách và màn hình chuông reo nhân ái.
+  - `reminder/`: Quản lý lời nhắc đếm ngược / hẹn giờ.
+  - `todo/`: Quản lý danh sách công việc.
+  - `voice/`: STT, TTS, bộ điều phối Voice Pipeline & Action Router.
+  - `home/`: Màn hình chính với Quả cầu tương tác Voice Orb.
+  - `settings/`: Cài đặt giọng điệu, tốc độ đọc, Groq API key.
+- `src/shared/`: UI Components dùng chung (`VoiceOrb`, `Card`, `BottomNavBar`, ...) và Zustand stores (`useAlarmStore`, `useReminderStore`, `useTodoStore`, `useSettingsStore`).
+- `docs/plans/voice-assistant/`: Tài liệu đặc tả (`2026-09-10-spec.md`) và kế hoạch triển khai chi tiết (`2026-09-10-plan.md`).
+- `DESIGN.md`: Quy chuẩn thiết kế UI/UX theo Design System Midnight Synapse.
+- `README.md`: Hướng dẫn tổng quan dự án, kiến trúc và cách chạy ứng dụng.
 
 ## Operational Resources (AI Context)
-Mọi hành động của AI phải soi chiếu qua các tài nguyên này:
-- **Workflows**: Tham khảo các quy trình chạy tại `.agents/workflows/` (ví dụ: `/debug`, `/design`, `/improve`, `/init`, `/feature`, `/node-installer`, `/optimize-bundle`).
-- **Coding Rules**: Tham khảo `.agents/rules/` để đảm bảo chất lượng code và an toàn thông tin (ví dụ: `code-quality.md`, `security.md`).
-- **Special Skills**: Các kỹ năng bổ trợ đã được định nghĩa tại `.agents/skills/` (ví dụ: `api-design`, `database-design`, `sequence-diagram`, `entity-reader`, `code-reviewer`, `debug-fe`, v.v.).
+- **Workflows**: `.agents/workflows/` (debug, feature, improve, v.v.).
+- **Coding Rules**: `.agents/rules/` (`code-quality.md`, `security.md`).
+- **Design Specs**: Tuân thủ nghiêm ngặt `DESIGN.md` (màu sắc, typography, kích thước chạm, animations).
 
 ## Conventions
-- **Language**: Mã nguồn (code/comments) sử dụng Tiếng Anh. Tài liệu đặc tả/hướng dẫn viết bằng Tiếng Việt, giữ nguyên các thuật ngữ chuyên ngành Tiếng Anh để đảm bảo tính chính xác và dễ tra cứu.
-- **Visuals**: Sử dụng Mermaid diagrams hoặc PlantUML cho tất cả các phần mô tả luồng (flowchart, sequence, state) và sơ đồ hạ tầng.
-- **Commit Message**: Tuân thủ Conventional Commits khi cập nhật tài liệu hoặc chỉnh sửa mã nguồn (`feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`, `chore: ...`).
+- **Language**: Mã nguồn (code/comments) sử dụng Tiếng Anh. Tài liệu đặc tả/hướng dẫn viết bằng Tiếng Việt, giữ nguyên các thuật ngữ chuyên ngành Tiếng Anh.
+- **Git Commit**: Tuân thủ Conventional Commits (`feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `test:`, `chore:`).
+- **Security**: KHÔNG commit file `.env` hoặc API keys lên Git repo.

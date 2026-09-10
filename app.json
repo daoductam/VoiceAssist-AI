@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "VoiceAssist AI",
+    "slug": "voiceassist-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A0C16"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.voiceassist.ai",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Ứng dụng cần quyền nhận diện giọng nói để bạn điều khiển báo thức và ghi nhớ.",
+        "NSMicrophoneUsageDescription": "Ứng dụng cần quyền sử dụng micro để ghi âm lệnh giọng nói của bạn."
+      }
+    },
+    "android": {
+      "package": "com.voiceassist.ai",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0C16",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "RECORD_AUDIO",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "SCHEDULE_EXACT_ALARM"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store"
+    ]
+  }
+}
