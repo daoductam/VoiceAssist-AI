@@ -1,16 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { VoiceOrb } from '@shared/components/VoiceOrb';
 import { VoiceOrbState } from '@domain/enums';
 import { Sparkles, Clock, Calendar, ChevronRight } from 'lucide-react-native';
+import { useAlarmStore } from '@shared/stores/useAlarmStore';
+import { useReminderStore } from '@shared/stores/useReminderStore';
 
 export const HomeScreen: React.FC = () => {
   const [orbState, setOrbState] = useState<VoiceOrbState>('idle');
+  const { alarms, loadAlarms } = useAlarmStore();
+  const { upcomingReminders, loadReminders } = useReminderStore();
+
+  useEffect(() => {
+    loadAlarms();
+    loadReminders();
+  }, [loadAlarms, loadReminders]);
+
+  const activeAlarms = alarms.filter((a) => a.isActive);
+  const nextAlarm = activeAlarms.length > 0 ? activeAlarms[0] : null;
 
   const handleOrbPress = () => {
-    // Demo cycle between states when tapped
     if (orbState === 'idle') setOrbState('listening');
     else if (orbState === 'listening') setOrbState('thinking');
     else if (orbState === 'thinking') setOrbState('speaking');
@@ -60,12 +71,16 @@ export const HomeScreen: React.FC = () => {
           </View>
           <View style={styles.heroHeaderTextWrapper}>
             <Text style={styles.heroCardTag}>BÁO THỨC KẾ TIẾP</Text>
-            <Text style={styles.heroCardRemaining}>còn 7 giờ 45 phút</Text>
+            <Text style={styles.heroCardRemaining}>
+              {nextAlarm ? 'Đã bật' : 'Chưa có báo thức nào'}
+            </Text>
           </View>
         </View>
 
-        <Text style={styles.heroTime}>06:30</Text>
-        <Text style={styles.heroAlarmTitle}>Thức dậy thể dục & ăn sáng</Text>
+        <Text style={styles.heroTime}>{nextAlarm ? nextAlarm.time : '--:--'}</Text>
+        <Text style={styles.heroAlarmTitle}>
+          {nextAlarm ? nextAlarm.label : 'Nói "Đặt báo thức 6h sáng" để tạo'}
+        </Text>
 
         <View style={styles.heroFooter}>
           <Text style={styles.heroAiNote}>

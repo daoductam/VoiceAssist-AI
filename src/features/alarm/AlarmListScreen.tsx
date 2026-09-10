@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,48 +11,24 @@ import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { DAY_LABELS_VN } from '@core/constants';
 import { Plus, Bell, Clock, CheckCircle2 } from 'lucide-react-native';
+import { useAlarmStore } from '@shared/stores/useAlarmStore';
+import { useReminderStore } from '@shared/stores/useReminderStore';
+import { useTodoStore } from '@shared/stores/useTodoStore';
 
 type SubTab = 'alarms' | 'reminders' | 'todos';
 
-interface DemoAlarm {
-  id: string;
-  time: string;
-  label: string;
-  isActive: boolean;
-  repeatDays: number[];
-}
-
 export const AlarmListScreen: React.FC = () => {
   const [subTab, setSubTab] = useState<SubTab>('alarms');
-  const [alarms, setAlarms] = useState<DemoAlarm[]>([
-    {
-      id: '1',
-      time: '06:30',
-      label: 'Báo thức buổi sáng',
-      isActive: true,
-      repeatDays: [0, 1, 2, 3, 4], // T2-T6
-    },
-    {
-      id: '2',
-      time: '08:00',
-      label: 'Dậy cuối tuần thư giãn',
-      isActive: false,
-      repeatDays: [5, 6], // T7, CN
-    },
-    {
-      id: '3',
-      time: '23:00',
-      label: 'Nhắc đi ngủ sớm',
-      isActive: true,
-      repeatDays: [0, 1, 2, 3, 4, 5, 6],
-    },
-  ]);
 
-  const toggleAlarm = (id: string) => {
-    setAlarms((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a))
-    );
-  };
+  const { alarms, loadAlarms, toggleAlarm } = useAlarmStore();
+  const { reminders, loadReminders, completeReminder } = useReminderStore();
+  const { todos, loadTodos, toggleTodo } = useTodoStore();
+
+  useEffect(() => {
+    loadAlarms();
+    loadReminders();
+    loadTodos();
+  }, [loadAlarms, loadReminders, loadTodos]);
 
   return (
     <View style={styles.container}>
@@ -70,7 +46,7 @@ export const AlarmListScreen: React.FC = () => {
               subTab === 'alarms' && styles.segmentTextActive,
             ]}
           >
-            Báo thức
+            Báo thức ({alarms.length})
           </Text>
         </TouchableOpacity>
 
@@ -92,7 +68,7 @@ export const AlarmListScreen: React.FC = () => {
               subTab === 'reminders' && styles.segmentTextActive,
             ]}
           >
-            Lời nhắc
+            Lời nhắc ({reminders.length})
           </Text>
         </TouchableOpacity>
 
@@ -111,7 +87,7 @@ export const AlarmListScreen: React.FC = () => {
               subTab === 'todos' && styles.segmentTextActive,
             ]}
           >
-            Việc cần làm
+            To-do ({todos.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -121,74 +97,156 @@ export const AlarmListScreen: React.FC = () => {
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
       >
-        {subTab === 'alarms' &&
-          alarms.map((alarm) => (
-            <View key={alarm.id} style={styles.alarmCard}>
-              <View style={styles.alarmHeader}>
-                <View>
-                  <Text
-                    style={[
-                      styles.alarmTime,
-                      !alarm.isActive && styles.alarmTimeInactive,
-                    ]}
-                  >
-                    {alarm.time}
-                  </Text>
-                  <Text style={styles.alarmLabel}>{alarm.label}</Text>
-                </View>
-                <Switch
-                  value={alarm.isActive}
-                  onValueChange={() => toggleAlarm(alarm.id)}
-                  trackColor={{ false: Colors.border, true: Colors.primary }}
-                  thumbColor={alarm.isActive ? '#FFFFFF' : Colors.textMuted}
-                />
+        {/* Tab 1: Alarms */}
+        {subTab === 'alarms' && (
+          <>
+            {alarms.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Bell size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>Chưa có báo thức nào</Text>
+                <Text style={styles.emptySub}>
+                  Hãy thử chạm vào micro và nói: "Đặt báo thức 6 giờ 30 sáng mai"
+                </Text>
               </View>
-
-              {/* Repeat Days Pills */}
-              <View style={styles.repeatDaysRow}>
-                {DAY_LABELS_VN.map((dayLabel, index) => {
-                  const isSelected = alarm.repeatDays.includes(index);
-                  return (
-                    <View
-                      key={dayLabel}
-                      style={[
-                        styles.dayPill,
-                        isSelected && styles.dayPillSelected,
-                      ]}
-                    >
+            ) : (
+              alarms.map((alarm) => (
+                <View key={alarm.id} style={styles.alarmCard}>
+                  <View style={styles.alarmHeader}>
+                    <View>
                       <Text
                         style={[
-                          styles.dayPillText,
-                          isSelected && styles.dayPillTextSelected,
+                          styles.alarmTime,
+                          !alarm.isActive && styles.alarmTimeInactive,
                         ]}
                       >
-                        {dayLabel}
+                        {alarm.time}
                       </Text>
+                      <Text style={styles.alarmLabel}>{alarm.label}</Text>
                     </View>
-                  );
-                })}
-              </View>
-            </View>
-          ))}
+                    <Switch
+                      value={alarm.isActive}
+                      onValueChange={() => toggleAlarm(alarm.id, !alarm.isActive)}
+                      trackColor={{ false: Colors.border, true: Colors.primary }}
+                      thumbColor={alarm.isActive ? '#FFFFFF' : Colors.textMuted}
+                    />
+                  </View>
 
-        {subTab === 'reminders' && (
-          <View style={styles.emptyCard}>
-            <Clock size={36} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>Chưa có lời nhắc nào</Text>
-            <Text style={styles.emptySub}>
-              Hãy thử nói: "Nhắc tôi uống nước sau 30 phút nữa"
-            </Text>
-          </View>
+                  {/* Repeat Days Pills */}
+                  <View style={styles.repeatDaysRow}>
+                    {DAY_LABELS_VN.map((dayLabel, index) => {
+                      const isSelected = alarm.repeatDays.includes(index);
+                      return (
+                        <View
+                          key={dayLabel}
+                          style={[
+                            styles.dayPill,
+                            isSelected && styles.dayPillSelected,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayPillText,
+                              isSelected && styles.dayPillTextSelected,
+                            ]}
+                          >
+                            {dayLabel}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
         )}
 
+        {/* Tab 2: Reminders */}
+        {subTab === 'reminders' && (
+          <>
+            {reminders.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Clock size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>Chưa có lời nhắc nào</Text>
+                <Text style={styles.emptySub}>
+                  Hãy thử nói: "Nhắc tôi uống nước sau 30 phút nữa"
+                </Text>
+              </View>
+            ) : (
+              reminders.map((reminder) => (
+                <TouchableOpacity
+                  key={reminder.id}
+                  style={styles.itemCard}
+                  onPress={() =>
+                    completeReminder(reminder.id, !reminder.isCompleted)
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Clock
+                    size={20}
+                    color={
+                      reminder.isCompleted ? Colors.textMuted : Colors.secondary
+                    }
+                  />
+                  <View style={styles.itemTextWrapper}>
+                    <Text
+                      style={[
+                        styles.itemTitle,
+                        reminder.isCompleted && styles.itemTitleCompleted,
+                      ]}
+                    >
+                      {reminder.title}
+                    </Text>
+                    <Text style={styles.itemSub}>
+                      {new Date(reminder.remindAt).toLocaleTimeString('vi-VN', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </>
+        )}
+
+        {/* Tab 3: Todos */}
         {subTab === 'todos' && (
-          <View style={styles.emptyCard}>
-            <CheckCircle2 size={36} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>Chưa có việc cần làm</Text>
-            <Text style={styles.emptySub}>
-              Hãy thử nói: "Thêm vào danh sách mua rau củ hôm nay"
-            </Text>
-          </View>
+          <>
+            {todos.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <CheckCircle2 size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>Chưa có việc cần làm</Text>
+                <Text style={styles.emptySub}>
+                  Hãy thử nói: "Thêm vào danh sách mua rau củ hôm nay"
+                </Text>
+              </View>
+            ) : (
+              todos.map((todo) => (
+                <TouchableOpacity
+                  key={todo.id}
+                  style={styles.itemCard}
+                  onPress={() => toggleTodo(todo.id, !todo.isDone)}
+                  activeOpacity={0.7}
+                >
+                  <CheckCircle2
+                    size={20}
+                    color={todo.isDone ? Colors.success : Colors.textMuted}
+                  />
+                  <View style={styles.itemTextWrapper}>
+                    <Text
+                      style={[
+                        styles.itemTitle,
+                        todo.isDone && styles.itemTitleCompleted,
+                      ]}
+                    >
+                      {todo.title}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -289,6 +347,33 @@ const styles = StyleSheet.create({
   },
   dayPillTextSelected: {
     color: '#FFFFFF',
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  itemTextWrapper: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  itemTitle: {
+    ...Typography.bodyLarge,
+    color: Colors.textPrimary,
+  },
+  itemTitleCompleted: {
+    color: Colors.textMuted,
+    textDecorationLine: 'line-through',
+  },
+  itemSub: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   emptyCard: {
     alignItems: 'center',
