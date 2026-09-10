@@ -12,17 +12,18 @@ const GROQ_TOOLS = [
     type: 'function',
     function: {
       name: 'set_alarm',
-      description: 'Đặt báo thức đánh thức vào một thời điểm cụ thể trong ngày (giờ và phút)',
+      description:
+        'Đặt chuông báo thức hoặc hẹn giờ đánh thức dậy (ví dụ: "gọi tôi dậy lúc 6h30", "đặt báo thức 7 giờ", "hẹn 17h dậy")',
       parameters: {
         type: 'object',
         properties: {
           time: {
             type: 'string',
-            description: 'Thời gian đặt báo thức định dạng 24h HH:mm (ví dụ: "06:30", "07:00")',
+            description: 'Thời gian đặt báo thức định dạng 24h HH:mm (ví dụ: "06:30", "17:00")',
           },
           label: {
             type: 'string',
-            description: 'Nhãn hoặc tên gọi của báo thức (ví dụ: "Dậy tập thể dục")',
+            description: 'Tên hoặc nhãn của báo thức (ví dụ: "Thức dậy", "Báo thức buổi sáng")',
           },
         },
         required: ['time'],
@@ -33,17 +34,18 @@ const GROQ_TOOLS = [
     type: 'function',
     function: {
       name: 'set_reminder',
-      description: 'Tạo lời nhắc nhở hẹn giờ cho một công việc hoặc sự kiện',
+      description:
+        'Tạo lời nhắc nhở thực hiện công việc, uống thuốc, tắt bếp, họp hành (ví dụ: "nhắc tôi uống nước sau 20 phút", "nhắc họp lúc 14h")',
       parameters: {
         type: 'object',
         properties: {
           title: {
             type: 'string',
-            description: 'Nội dung cần nhắc (ví dụ: "Uống thuốc", "Tắt bếp", "Họp nhóm")',
+            description: 'Nội dung việc cần nhắc nhở',
           },
           time: {
             type: 'string',
-            description: 'Thời gian nhắc nhở (HH:mm hoặc số phút)',
+            description: 'Thời gian nhắc nhở (định dạng HH:mm hoặc số phút đếm ngược)',
           },
         },
         required: ['title'],
@@ -106,9 +108,27 @@ export class GroqClient {
       return { toolName: 'none', parameters: {}, message: '' };
     }
 
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const dateString = now.toLocaleDateString('vi-VN', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
     const systemPrompt = `Bạn là Trợ lý Giọng nói Tiếng Việt thông minh cho ứng dụng VoiceAssist AI.
-Nhiệm vụ của bạn là lắng nghe câu nói của người dùng và gọi function phù hợp (set_alarm, set_reminder, add_todo, query_schedule).
-Nếu người dùng nói chuyện phiếm hoặc hỏi thăm thông thường, hãy trả lời tự nhiên, ấm áp bằng tiếng Việt.`;
+Thời gian thực hiện tại của hệ thống: ${timeString}, ${dateString}.
+
+Quy tắc xử lý:
+1. Khi người dùng nói về việc thức dậy ("gọi tôi dậy", "báo thức", "dậy lúc..."): PHẢI GỌI function 'set_alarm' với tham số time là giờ HH:mm (24h).
+2. Khi người dùng nói về nhắc việc ("nhắc tôi...", "hẹn giờ uống thuốc", "nhắc tắt bếp"): GỌI function 'set_reminder'.
+3. Khi người dùng muốn ghi nhớ việc cần làm: GỌI function 'add_todo'.
+4. Khi người dùng hỏi thời gian ("mấy giờ rồi", "hôm nay ngày mấy"): Hãy trả lời thời gian thực hiện tại là ${timeString}, ${dateString}.
+Trả lời ngắn gọn, ấm áp và tự nhiên.`;
 
     let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
       method: 'POST',
