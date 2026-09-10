@@ -4,6 +4,7 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from 'expo-audio';
+import { File, UploadTask, UploadType } from 'expo-file-system';
 import { APP_CONSTANTS } from '@core/constants';
 import * as SecureStore from 'expo-secure-store';
 
@@ -66,37 +67,68 @@ export class SttService {
       throw new Error('Không tìm thấy Groq API Key để nhận diện giọng nói.');
     }
 
-    const formData = new FormData();
-    const filename = audioUri.split('/').pop() || 'recording.m4a';
+    // Use native UploadTask from expo-file-system to avoid React Native FormData bugs
+    try {
+      const audioFile = new File(audioUri);
+      const uploadTask = new UploadTask(
+        audioFile,
+        `${APP_CONSTANTS.GROQ_API_URL}/audio/transcriptions`,
+        {
+          httpMethod: 'POST',
+          uploadType: UploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: 'audio/m4a',
+          parameters: {
+            model: APP_CONSTANTS.GROQ_WHISPER_MODEL,
+            language: 'vi',
+          },
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+        }
+      );
 
-    // In React Native, FormData expects { uri, name, type }
-    // @ts-expect-error React Native multipart file representation
-    formData.append('file', {
-      uri: audioUri,
-      name: filename,
-      type: 'audio/m4a',
-    });
-    formData.append('model', APP_CONSTANTS.GROQ_WHISPER_MODEL);
-    formData.append('language', 'vi');
+      const result = await uploadTask.uploadAsync();
 
-    const response = await fetch(
-      `${APP_CONSTANTS.GROQ_API_URL}/audio/transcriptions`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
+      if (result.status >= 200 && result.status < 300) {
+        const data = JSON.parse(result.body) as { text?: string };
+        return data.text ? data.text.trim() : '';
+      } else {
+        throw new Error(`Lỗi Groq Whisper (${result.status}): ${result.body}`);
       }
-    );
+    } catch (err: unknown) {
+      console.warn('Native UploadTask failed, trying fallback:', err);
+      // Fallback: fetch with blob
+      try {
+        const fileData = await fetch(audioUri);
+        const blob = await fileData.blob();
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Lỗi Groq Whisper (${response.status}): ${errorText}`);
+        const formData = new FormData();
+        formData.append('file', blob, 'audio.m4a');
+        formData.append('model', APP_CONSTANTS.GROQ_WHISPER_MODEL);
+        formData.append('language', 'vi');
+
+        const response = await fetch(
+          `${APP_CONSTANTS.GROQ_API_URL}/audio/transcriptions`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: formData,
+          }
+        );
+
+        if (response.ok) {
+          const data = (await response.json()) as { text?: string };
+          return data.text ? data.text.trim() : '';
+        }
+      } catch (fallbackErr) {
+        console.warn('Fallback upload also failed:', fallbackErr);
+      }
+
+      throw err;
     }
-
-    const data = (await response.json()) as { text?: string };
-    return data.text ? data.text.trim() : '';
   }
 
   isRecording(): boolean {
