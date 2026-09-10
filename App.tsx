@@ -15,18 +15,13 @@ import { notificationService } from '@domain/services/notification_service';
 import { alarmService } from '@domain/services/alarm_service';
 import { reminderService } from '@domain/services/reminder_service';
 
+import { useAlarmStore } from '@shared/stores/useAlarmStore';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [isListening, setIsListening] = useState<boolean>(false);
-  const [ringingAlarm, setRingingAlarm] = useState<{
-    visible: boolean;
-    label: string;
-    time: string;
-  }>({
-    visible: false,
-    label: 'Báo thức buổi sáng',
-    time: '06:30',
-  });
+
+  const { ringingAlarm, openRingingAlarm, closeRingingAlarm } = useAlarmStore();
 
   useEffect(() => {
     // 1. Enable audio playback in silent mode on iOS
@@ -45,8 +40,7 @@ export default function App() {
       (notification) => {
         const data = notification.request.content.data;
         if (data && data.type === 'alarm') {
-          setRingingAlarm({
-            visible: true,
+          openRingingAlarm({
             label: notification.request.content.title || 'Báo thức',
             time: (data.time as string) || '06:30',
           });
@@ -59,8 +53,7 @@ export default function App() {
       (response) => {
         const data = response.notification.request.content.data;
         if (data && data.type === 'alarm') {
-          setRingingAlarm({
-            visible: true,
+          openRingingAlarm({
             label: response.notification.request.content.title || 'Báo thức',
             time: (data.time as string) || '06:30',
           });
@@ -72,7 +65,7 @@ export default function App() {
       receivedSub.remove();
       responseSub.remove();
     };
-  }, []);
+  }, [openRingingAlarm]);
 
   const handleMicPress = () => {
     setIsListening((prev) => !prev);
@@ -83,11 +76,11 @@ export default function App() {
   };
 
   const handleDismissAlarm = () => {
-    setRingingAlarm((prev) => ({ ...prev, visible: false }));
+    closeRingingAlarm();
   };
 
   const handleSnoozeAlarm = () => {
-    setRingingAlarm((prev) => ({ ...prev, visible: false }));
+    closeRingingAlarm();
     // Schedule a 5-minute snooze notification
     Notifications.scheduleNotificationAsync({
       content: {

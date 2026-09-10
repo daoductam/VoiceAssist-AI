@@ -1,4 +1,5 @@
 import * as Speech from 'expo-speech';
+import { setAudioModeAsync } from 'expo-audio';
 
 export class TtsService {
   /**
@@ -30,19 +31,37 @@ export class TtsService {
     const speechText = this.cleanTextForSpeech(text);
     if (!speechText || speechText.trim().length === 0) return;
 
-    // Stop previous utterance if any
-    await this.stop();
+    // 1. Ensure audio session plays in silent mode on iOS
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+      });
+    } catch {
+      // Ignore
+    }
+
+    // 2. Stop previous utterance safely only if currently speaking
+    try {
+      const isSpeaking = await Speech.isSpeakingAsync();
+      if (isSpeaking) {
+        await Speech.stop();
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    } catch {
+      // Ignore
+    }
 
     return new Promise((resolve) => {
       Speech.speak(speechText, {
         language: 'vi-VN',
-        rate: options?.rate ?? 1.0,
+        rate: options?.rate ?? 0.95,
         pitch: options?.pitch ?? 1.0,
         onDone: () => {
           options?.onDone?.();
           resolve();
         },
         onError: (err) => {
+          console.warn('TTS Speech error:', err);
           options?.onError?.(err);
           resolve();
         },

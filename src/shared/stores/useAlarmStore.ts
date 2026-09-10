@@ -7,6 +7,14 @@ interface AlarmStoreState {
   loading: boolean;
   error: string | null;
 
+  ringingAlarm: {
+    visible: boolean;
+    label: string;
+    time: string;
+  };
+  openRingingAlarm: (params?: { label?: string; time?: string }) => void;
+  closeRingingAlarm: () => void;
+
   loadAlarms: () => Promise<void>;
   createAlarm: (params: {
     time: string;
@@ -23,6 +31,33 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
   alarms: [],
   loading: false,
   error: null,
+
+  ringingAlarm: {
+    visible: false,
+    label: 'Báo thức buổi sáng',
+    time: '06:30',
+  },
+
+  openRingingAlarm: (params) => {
+    set({
+      ringingAlarm: {
+        visible: true,
+        label: params?.label || 'Báo thức buổi sáng',
+        time:
+          params?.time ||
+          new Date().toLocaleTimeString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+      },
+    });
+  },
+
+  closeRingingAlarm: () => {
+    set((state) => ({
+      ringingAlarm: { ...state.ringingAlarm, visible: false },
+    }));
+  },
 
   loadAlarms: async () => {
     set({ loading: true, error: null });

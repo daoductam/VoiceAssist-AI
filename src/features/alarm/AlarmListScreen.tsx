@@ -21,11 +21,13 @@ import {
   Trash2,
   Sparkles,
   Play,
+  Volume2,
 } from 'lucide-react-native';
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
 import { useReminderStore } from '@shared/stores/useReminderStore';
 import { useTodoStore } from '@shared/stores/useTodoStore';
 import { notificationService } from '@domain/services/notification_service';
+import { ttsService } from '@features/voice/tts_service';
 
 type SubTab = 'alarms' | 'reminders' | 'todos';
 
@@ -36,9 +38,16 @@ export const AlarmListScreen: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [inputTime, setInputTime] = useState<string>('');
   const [inputLabel, setInputLabel] = useState<string>('Báo thức');
+  const [testCountdown, setTestCountdown] = useState<number | null>(null);
 
-  const { alarms, loadAlarms, toggleAlarm, deleteAlarm, createAlarm } =
-    useAlarmStore();
+  const {
+    alarms,
+    loadAlarms,
+    toggleAlarm,
+    deleteAlarm,
+    createAlarm,
+    openRingingAlarm,
+  } = useAlarmStore();
   const { reminders, loadReminders, completeReminder } = useReminderStore();
   const { todos, loadTodos, toggleTodo } = useTodoStore();
 
@@ -48,15 +57,44 @@ export const AlarmListScreen: React.FC = () => {
     loadTodos();
   }, [loadAlarms, loadReminders, loadTodos]);
 
-  const handleTestAlarm = async () => {
+  // 1. Open ringing screen immediately (0s wait, no notification needed)
+  const handleOpenAlarmDirectly = () => {
+    openRingingAlarm({
+      label: 'Báo thức thử nghiệm',
+      time: new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    });
+  };
+
+  // 2. Schedule test notification in 3s (NO blocking Alert dialog)
+  const handleTestAlarmScheduled = async () => {
     try {
-      await notificationService.triggerTestAlarm(2);
-      Alert.alert(
-        '⏰ Đã hẹn giờ chuông thử!',
-        'Chuông và giao diện thức dậy sẽ reo sau 2 giây. Bạn có thể để app trên màn hình hoặc bấm nút sườn khoá máy để thử nghiệm.'
-      );
+      await notificationService.triggerTestAlarm(3);
+      setTestCountdown(3);
+      const timer = setInterval(() => {
+        setTestCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            clearInterval(timer);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch (e) {
       Alert.alert('Lỗi', 'Không thể kích hoạt chuông thử: ' + (e as Error).message);
+    }
+  };
+
+  // 3. Test AI Voice immediately
+  const handleTestSpeech = async () => {
+    try {
+      await ttsService.speak(
+        'Chào buổi sáng bạn nhé! Một ngày mới tuyệt vời đang chờ đón bạn. Dậy thôi nào!'
+      );
+    } catch (e) {
+      Alert.alert('Lỗi âm thanh', 'Không thể phát giọng nói: ' + (e as Error).message);
     }
   };
 
@@ -182,27 +220,66 @@ export const AlarmListScreen: React.FC = () => {
         {/* Tab 1: Alarms */}
         {subTab === 'alarms' && (
           <>
-            {/* Quick Instant Test Alarm Button */}
-            <TouchableOpacity
-              style={styles.testAlarmBanner}
-              onPress={handleTestAlarm}
-              activeOpacity={0.8}
-            >
-              <View style={styles.testAlarmIconWrapper}>
-                <Sparkles size={20} color={Colors.warning} />
+            {/* Quick Testing Control Center */}
+            <View style={styles.testControlCard}>
+              {/* Button A: Open Ringing Alarm Modal Directly */}
+              <TouchableOpacity
+                style={styles.openDirectBtn}
+                onPress={handleOpenAlarmDirectly}
+                activeOpacity={0.85}
+              >
+                <View style={styles.openDirectIconWrapper}>
+                  <Sparkles size={20} color="#FFFFFF" />
+                </View>
+                <View style={styles.openDirectTextWrapper}>
+                  <Text style={styles.openDirectTitle}>
+                    Mở màn hình chuông reo (Thử ngay)
+                  </Text>
+                  <Text style={styles.openDirectSub}>
+                    Rung dồn dập & AI đọc lời chào buổi sáng tức thì
+                  </Text>
+                </View>
+                <Play size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {/* Sub Row: Voice test & Lockscreen test */}
+              <View style={styles.subTestingRow}>
+                {/* Button B: Test AI Voice directly */}
+                <TouchableOpacity
+                  style={styles.subTestBtn}
+                  onPress={handleTestSpeech}
+                  activeOpacity={0.8}
+                >
+                  <Volume2 size={16} color={Colors.secondary} />
+                  <Text style={styles.subTestBtnText}>Nghe giọng nói AI</Text>
+                </TouchableOpacity>
+
+                {/* Button C: 3-second lockscreen test */}
+                <TouchableOpacity
+                  style={[
+                    styles.subTestBtn,
+                    testCountdown !== null && styles.subTestBtnActive,
+                  ]}
+                  onPress={handleTestAlarmScheduled}
+                  activeOpacity={0.8}
+                >
+                  <Bell
+                    size={16}
+                    color={testCountdown !== null ? '#FFFFFF' : Colors.warning}
+                  />
+                  <Text
+                    style={[
+                      styles.subTestBtnText,
+                      testCountdown !== null && styles.subTestBtnTextActive,
+                    ]}
+                  >
+                    {testCountdown !== null
+                      ? `Reo sau ${testCountdown}s (Khoá máy)`
+                      : 'Hẹn chuông 3s'}
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.testAlarmTextWrapper}>
-                <Text style={styles.testAlarmTitle}>
-                  Thử chuông ngay (Reo sau 2 giây)
-                </Text>
-                <Text style={styles.testAlarmSub}>
-                  Kiểm tra âm thanh & màn hình thức dậy tức thì
-                </Text>
-              </View>
-              <View style={styles.testAlarmActionIcon}>
-                <Play size={16} color={Colors.warning} />
-              </View>
-            </TouchableOpacity>
+            </View>
 
             {alarms.length === 0 ? (
               <View style={styles.emptyCard}>
@@ -472,40 +549,78 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 110,
   },
-  testAlarmBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    borderRadius: 16,
+  testControlCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderColor: Colors.borderGlow,
+    gap: 10,
   },
-  testAlarmIconWrapper: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  openDirectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  openDirectIconWrapper: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
-  testAlarmTextWrapper: {
+  openDirectTextWrapper: {
     flex: 1,
   },
-  testAlarmTitle: {
+  openDirectTitle: {
     ...Typography.titleSmall,
-    color: Colors.warning,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
-  testAlarmSub: {
+  openDirectSub: {
     ...Typography.caption,
-    color: Colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
-  testAlarmActionIcon: {
-    padding: 6,
+  subTestingRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  subTestBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceElevated,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  subTestBtnActive: {
+    backgroundColor: Colors.warning,
+    borderColor: Colors.warning,
+  },
+  subTestBtnText: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: '600',
+  },
+  subTestBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   alarmCard: {
     backgroundColor: Colors.surface,
