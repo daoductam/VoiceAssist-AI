@@ -1,0 +1,16 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agents / AI config (keep .agents/ but ignore local state)
+.codegraph/
+
+# Dependencies (will be added when Flutter project is initialized)
+# build/
+# .dart_tool/
+# .packages
