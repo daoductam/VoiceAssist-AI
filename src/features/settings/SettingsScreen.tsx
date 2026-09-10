@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   TouchableOpacity,
   TextInput,
   Switch,
+  Alert,
 } from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { ToneStyle } from '@domain/enums';
+import { useSettingsStore } from '@shared/stores/useSettingsStore';
+import { ttsService } from '@features/voice/tts_service';
 import {
   KeyRound,
   CheckCircle2,
@@ -19,16 +22,50 @@ import {
   Briefcase,
   Smile,
   ShieldCheck,
+  Save,
 } from 'lucide-react-native';
 
 export const SettingsScreen: React.FC = () => {
-  const [groqKey, setGroqKey] = useState<string>(
-    process.env.EXPO_PUBLIC_GROQ_API_KEY
-      ? `${process.env.EXPO_PUBLIC_GROQ_API_KEY.substring(0, 7)}••••••••••••`
-      : ''
-  );
-  const [selectedTone, setSelectedTone] = useState<ToneStyle>('cute');
-  const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
+  const {
+    toneStyle,
+    setToneStyle,
+    ttsEnabled,
+    setTtsEnabled,
+    groqApiKey,
+    setGroqApiKey,
+    isKeyConfigured,
+    loadSettings,
+  } = useSettingsStore();
+
+  const [inputKey, setInputKey] = useState<string>('');
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  useEffect(() => {
+    if (groqApiKey) {
+      setInputKey(groqApiKey);
+    }
+  }, [groqApiKey]);
+
+  const handleSaveKey = async () => {
+    await setGroqApiKey(inputKey);
+    Alert.alert('Thành công', 'Đã lưu khóa bí mật Groq API an toàn!');
+  };
+
+  const handleToneSelect = (tone: ToneStyle) => {
+    setToneStyle(tone);
+    if (ttsEnabled) {
+      if (tone === 'friendly') {
+        ttsService.speak('Chào bạn! Mình là trợ lý thân thiện của bạn nhé!');
+      } else if (tone === 'professional') {
+        ttsService.speak('Hệ thống trợ lý chuyên nghiệp đã được kích hoạt.');
+      } else {
+        ttsService.speak('Dạ vâng ạ! Em là trợ lý dễ thương của bạn nè! 💖');
+      }
+    }
+  };
 
   return (
     <ScrollView
@@ -48,25 +85,43 @@ export const SettingsScreen: React.FC = () => {
           <Text style={styles.cardTitle}>Groq Cloud API Key</Text>
         </View>
         <Text style={styles.cardDesc}>
-          Dùng để nhận dạng giọng nói tiếng Việt tức thì và phân tích ý định qua
-          Llama 3.3.
+          Dùng để nhận dạng giọng nói tiếng Việt tức thì (Whisper) và phân tích ý
+          định siêu tốc (Llama 3.3).
         </Text>
 
         <View style={styles.inputRow}>
           <TextInput
             style={styles.textInput}
-            value={groqKey}
-            onChangeText={setGroqKey}
+            value={inputKey}
+            onChangeText={setInputKey}
             placeholder="gsk_..."
             placeholderTextColor={Colors.textMuted}
-            secureTextEntry={false}
+            secureTextEntry={true}
+            autoCapitalize="none"
           />
+          <TouchableOpacity
+            style={styles.saveKeyBtn}
+            onPress={handleSaveKey}
+            activeOpacity={0.8}
+          >
+            <Save size={18} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statusRow}>
-          <ShieldCheck size={16} color={Colors.success} />
-          <Text style={styles.statusText}>
-            Khóa API đã sẵn sàng và được bảo vệ cục bộ
+          <ShieldCheck
+            size={16}
+            color={isKeyConfigured ? Colors.success : Colors.warning}
+          />
+          <Text
+            style={[
+              styles.statusText,
+              !isKeyConfigured && { color: Colors.warning },
+            ]}
+          >
+            {isKeyConfigured
+              ? 'Khóa API đã sẵn sàng và được bảo vệ cục bộ'
+              : 'Chưa cấu hình API key (sẽ dùng bộ bóc tách offline)'}
           </Text>
         </View>
       </View>
@@ -78,9 +133,9 @@ export const SettingsScreen: React.FC = () => {
       <TouchableOpacity
         style={[
           styles.toneCard,
-          selectedTone === 'friendly' && styles.toneCardSelected,
+          toneStyle === 'friendly' && styles.toneCardSelected,
         ]}
-        onPress={() => setSelectedTone('friendly')}
+        onPress={() => handleToneSelect('friendly')}
         activeOpacity={0.8}
       >
         <View style={styles.toneIconWrapper}>
@@ -89,7 +144,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.toneTextWrapper}>
           <View style={styles.toneTitleRow}>
             <Text style={styles.toneTitle}>Thân thiện (Friendly)</Text>
-            {selectedTone === 'friendly' && (
+            {toneStyle === 'friendly' && (
               <CheckCircle2 size={18} color={Colors.primary} />
             )}
           </View>
@@ -103,9 +158,9 @@ export const SettingsScreen: React.FC = () => {
       <TouchableOpacity
         style={[
           styles.toneCard,
-          selectedTone === 'professional' && styles.toneCardSelected,
+          toneStyle === 'professional' && styles.toneCardSelected,
         ]}
-        onPress={() => setSelectedTone('professional')}
+        onPress={() => handleToneSelect('professional')}
         activeOpacity={0.8}
       >
         <View style={styles.toneIconWrapper}>
@@ -114,13 +169,12 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.toneTextWrapper}>
           <View style={styles.toneTitleRow}>
             <Text style={styles.toneTitle}>Chuyên nghiệp (Professional)</Text>
-            {selectedTone === 'professional' && (
+            {toneStyle === 'professional' && (
               <CheckCircle2 size={18} color={Colors.primary} />
             )}
           </View>
           <Text style={styles.toneExample}>
-            "Báo thức đã được thiết lập vào lúc 06:30. Chúc bạn hoàn thành tốt công
-            việc."
+            "Báo thức đã được thiết lập vào lúc 06:30. Chúc bạn làm việc hiệu quả."
           </Text>
         </View>
       </TouchableOpacity>
@@ -129,9 +183,9 @@ export const SettingsScreen: React.FC = () => {
       <TouchableOpacity
         style={[
           styles.toneCard,
-          selectedTone === 'cute' && styles.toneCardSelected,
+          toneStyle === 'cute' && styles.toneCardSelected,
         ]}
-        onPress={() => setSelectedTone('cute')}
+        onPress={() => handleToneSelect('cute')}
         activeOpacity={0.8}
       >
         <View style={styles.toneIconWrapper}>
@@ -140,7 +194,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.toneTextWrapper}>
           <View style={styles.toneTitleRow}>
             <Text style={styles.toneTitle}>Dễ thương (Cute)</Text>
-            {selectedTone === 'cute' && (
+            {toneStyle === 'cute' && (
               <CheckCircle2 size={18} color={Colors.primary} />
             )}
           </View>
@@ -215,16 +269,25 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   inputRow: {
+    flexDirection: 'row',
     backgroundColor: Colors.surfaceSubtle,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 4,
+    alignItems: 'center',
   },
   textInput: {
     ...Typography.bodyMedium,
     color: Colors.textPrimary,
+    flex: 1,
+    paddingVertical: 8,
+  },
+  saveKeyBtn: {
+    backgroundColor: Colors.primary,
+    padding: 8,
+    borderRadius: 8,
   },
   statusRow: {
     flexDirection: 'row',

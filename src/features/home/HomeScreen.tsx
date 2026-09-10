@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { VoiceOrb } from '@shared/components/VoiceOrb';
@@ -7,25 +14,74 @@ import { VoiceOrbState } from '@domain/enums';
 import { Sparkles, Clock, Calendar, ChevronRight } from 'lucide-react-native';
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
 import { useReminderStore } from '@shared/stores/useReminderStore';
+import { useSettingsStore } from '@shared/stores/useSettingsStore';
+import { voicePipeline } from '@features/voice/voice_pipeline';
 
 export const HomeScreen: React.FC = () => {
   const [orbState, setOrbState] = useState<VoiceOrbState>('idle');
+  const [liveTranscription, setLiveTranscription] = useState<string>('');
+  const [liveResponse, setLiveResponse] = useState<string>('');
+
   const { alarms, loadAlarms } = useAlarmStore();
   const { upcomingReminders, loadReminders } = useReminderStore();
+  const { toneStyle, ttsEnabled, loadSettings } = useSettingsStore();
 
   useEffect(() => {
     loadAlarms();
     loadReminders();
-  }, [loadAlarms, loadReminders]);
+    loadSettings();
+  }, [loadAlarms, loadReminders, loadSettings]);
 
   const activeAlarms = alarms.filter((a) => a.isActive);
   const nextAlarm = activeAlarms.length > 0 ? activeAlarms[0] : null;
 
-  const handleOrbPress = () => {
-    if (orbState === 'idle') setOrbState('listening');
-    else if (orbState === 'listening') setOrbState('thinking');
-    else if (orbState === 'thinking') setOrbState('speaking');
-    else setOrbState('idle');
+  const handleOrbPress = async () => {
+    try {
+      if (orbState === 'idle') {
+        setLiveTranscription('');
+        setLiveResponse('');
+        setOrbState('listening');
+        await voicePipeline.startListening();
+      } else if (orbState === 'listening') {
+        setOrbState('thinking');
+        const result = await voicePipeline.stopListeningAndProcess(
+          toneStyle,
+          ttsEnabled
+        );
+        setLiveTranscription(result.transcription);
+        setLiveResponse(result.responseText);
+
+        // Reload data stores to reflect any created alarms/reminders
+        await Promise.all([loadAlarms(), loadReminders()]);
+
+        setOrbState('speaking');
+        // Reset to idle after a short moment
+        setTimeout(() => {
+          setOrbState('idle');
+        }, 3000);
+      } else if (orbState === 'speaking') {
+        await voicePipeline.stopSpeaking();
+        setOrbState('idle');
+      }
+    } catch (err: unknown) {
+      setOrbState('idle');
+      Alert.alert(
+        'Thông báo giọng nói',
+        err instanceof Error ? err.message : 'Có lỗi xảy ra khi xử lý giọng nói'
+      );
+    }
+  };
+
+  const getToneLabel = () => {
+    switch (toneStyle) {
+      case 'friendly':
+        return 'Thân thiện 😊';
+      case 'professional':
+        return 'Chuyên nghiệp 💼';
+      case 'cute':
+      default:
+        return 'Dễ thương 💖';
+    }
   };
 
   return (
@@ -42,7 +98,7 @@ export const HomeScreen: React.FC = () => {
         </View>
         <View style={styles.toneBadge}>
           <Sparkles size={14} color={Colors.ambientPurple} />
-          <Text style={styles.toneBadgeText}>Dễ thương 💖</Text>
+          <Text style={styles.toneBadgeText}>{getToneLabel()}</Text>
         </View>
       </View>
 
@@ -51,9 +107,9 @@ export const HomeScreen: React.FC = () => {
         <VoiceOrb state={orbState} onPress={handleOrbPress} size={130} />
         <Text style={styles.orbHintTitle}>
           {orbState === 'listening'
-            ? 'Đang lắng nghe bạn...'
+            ? 'Đang lắng nghe bạn nói (Chạm lại để gửi)...'
             : orbState === 'thinking'
-            ? 'Groq AI đang suy nghĩ...'
+            ? 'Groq AI đang phân tích ý định...'
             : orbState === 'speaking'
             ? 'Đang phát lời đáp...'
             : 'Chạm để nói chuyện với AI'}
@@ -62,6 +118,20 @@ export const HomeScreen: React.FC = () => {
           Ví dụ: "Gọi tôi dậy lúc 6 rưỡi sáng mai nhé"
         </Text>
       </View>
+
+      {/* Live Speech Recognition & Response Banner */}
+      {(liveTranscription || liveResponse) && (
+        <View style={styles.liveBanner}>
+          {liveTranscription ? (
+            <Text style={styles.liveTranscriptionText}>
+              🗣️ "{liveTranscription}"
+            </Text>
+          ) : null}
+          {liveResponse ? (
+            <Text style={styles.liveResponseText}>🤖 {liveResponse}</Text>
+          ) : null}
+        </View>
+      )}
 
       {/* Next Alarm Hero Card */}
       <View style={styles.heroCard}>
@@ -72,14 +142,14 @@ export const HomeScreen: React.FC = () => {
           <View style={styles.heroHeaderTextWrapper}>
             <Text style={styles.heroCardTag}>BÁO THỨC KẾ TIẾP</Text>
             <Text style={styles.heroCardRemaining}>
-              {nextAlarm ? 'Đã bật' : 'Chưa có báo thức nào'}
+              {nextAlarm ? 'Đang kích hoạt' : 'Chưa có báo thức nào'}
             </Text>
           </View>
         </View>
 
         <Text style={styles.heroTime}>{nextAlarm ? nextAlarm.time : '--:--'}</Text>
         <Text style={styles.heroAlarmTitle}>
-          {nextAlarm ? nextAlarm.label : 'Nói "Đặt báo thức 6h sáng" để tạo'}
+          {nextAlarm ? nextAlarm.label : 'Nói "Đặt báo thức 6h sáng" để tạo nhanh'}
         </Text>
 
         <View style={styles.heroFooter}>
@@ -91,28 +161,35 @@ export const HomeScreen: React.FC = () => {
 
       {/* Quick Agenda Section */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Lịch trình hôm nay</Text>
+        <Text style={styles.sectionTitle}>Lời nhắc sắp diễn ra</Text>
         <TouchableOpacity style={styles.seeAllButton}>
           <Text style={styles.seeAllText}>Xem tất cả</Text>
           <ChevronRight size={14} color={Colors.textAccent} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.agendaItem}>
-        <Calendar size={18} color={Colors.primary} />
-        <View style={styles.agendaTextWrapper}>
-          <Text style={styles.agendaItemTitle}>Họp nhóm Sprint Planning</Text>
-          <Text style={styles.agendaItemTime}>09:00 — Google Meet</Text>
+      {upcomingReminders.length === 0 ? (
+        <View style={styles.agendaEmpty}>
+          <Text style={styles.agendaEmptyText}>
+            Chưa có lời nhắc nào sắp tới
+          </Text>
         </View>
-      </View>
-
-      <View style={styles.agendaItem}>
-        <Clock size={18} color={Colors.warning} />
-        <View style={styles.agendaTextWrapper}>
-          <Text style={styles.agendaItemTitle}>Nhắc nhở uống nước & đứng dậy</Text>
-          <Text style={styles.agendaItemTime}>14:30 — Đếm ngược</Text>
-        </View>
-      </View>
+      ) : (
+        upcomingReminders.slice(0, 3).map((rem) => (
+          <View key={rem.id} style={styles.agendaItem}>
+            <Calendar size={18} color={Colors.primary} />
+            <View style={styles.agendaTextWrapper}>
+              <Text style={styles.agendaItemTitle}>{rem.title}</Text>
+              <Text style={styles.agendaItemTime}>
+                {new Date(rem.remindAt).toLocaleTimeString('vi-VN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
+            </View>
+          </View>
+        ))
+      )}
     </ScrollView>
   );
 };
@@ -125,7 +202,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 100, // Space for floating bottom nav
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
@@ -172,6 +249,24 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  liveBanner: {
+    backgroundColor: Colors.surface,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderGlow,
+    marginTop: 10,
+    gap: 6,
+  },
+  liveTranscriptionText: {
+    ...Typography.bodyMedium,
+    color: Colors.secondary,
+    fontStyle: 'italic',
+  },
+  liveResponseText: {
+    ...Typography.bodyLarge,
+    color: Colors.textPrimary,
   },
   heroCard: {
     backgroundColor: Colors.surface,
@@ -274,5 +369,17 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  agendaEmpty: {
+    padding: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  agendaEmptyText: {
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
   },
 });
