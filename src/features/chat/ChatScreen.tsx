@@ -1,80 +1,134 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+} from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
-import { Volume2, Sparkles, User, Bot } from 'lucide-react-native';
-
-interface DemoLog {
-  id: string;
-  userInput: string;
-  intent: string;
-  aiResponse: string;
-  time: string;
-}
+import { conversationLogDao } from '@data/daos/conversation_log_dao';
+import { ConversationLog } from '@domain/entities';
+import { ttsService } from '@features/voice/tts_service';
+import { Volume2, Sparkles, User, Bot, WifiOff } from 'lucide-react-native';
 
 export const ChatScreen: React.FC = () => {
-  const logs: DemoLog[] = [
-    {
-      id: '1',
-      userInput: 'Gọi tôi dậy lúc 6 rưỡi sáng mai nhé',
-      intent: 'setAlarm: 06:30',
-      aiResponse:
-        'Vâng ạ! Mình đã đặt báo thức lúc 06:30 sáng mai cho bạn rồi nha. Chúc bạn ngủ thật ngon giấc! 🌙',
-      time: '21:15',
-    },
-    {
-      id: '2',
-      userInput: 'Hôm nay trời có mưa không?',
-      intent: 'generalQa: weather',
-      aiResponse:
-        'Hôm nay thời tiết rất dễ chịu bạn nha, khoảng 27°C, trời nhiều mây nhẹ và không có mưa đâu ạ!',
-      time: '07:30',
-    },
-  ];
+  const [logs, setLogs] = useState<ConversationLog[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const recentLogs = await conversationLogDao.getRecent(50);
+      setLogs(recentLogs);
+    } catch (err) {
+      console.error('Failed to load conversation logs', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchLogs();
+    setRefreshing(false);
+  };
+
+  const handleReplay = (text: string) => {
+    ttsService.speak(text);
+  };
+
+  const formatLogTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  };
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={Colors.primary}
+        />
+      }
     >
       <Text style={styles.screenTitle}>Nhật ký Hội thoại AI</Text>
       <Text style={styles.screenSub}>Lịch sử tương tác và câu lệnh giọng nói</Text>
 
-      {logs.map((log) => (
-        <View key={log.id} style={styles.chatGroup}>
-          {/* User Input bubble */}
-          <View style={styles.userBubbleWrapper}>
-            <View style={styles.userBubble}>
-              <Text style={styles.userText}>{log.userInput}</Text>
-            </View>
-            <View style={styles.userAvatar}>
-              <User size={16} color="#FFFFFF" />
-            </View>
-          </View>
-
-          {/* AI Response bubble */}
-          <View style={styles.aiBubbleWrapper}>
-            <View style={styles.aiAvatar}>
-              <Bot size={16} color="#FFFFFF" />
-            </View>
-            <View style={styles.aiBubble}>
-              <View style={styles.intentBadge}>
-                <Sparkles size={12} color={Colors.secondary} />
-                <Text style={styles.intentText}>{log.intent}</Text>
-              </View>
-              <Text style={styles.aiText}>{log.aiResponse}</Text>
-              <View style={styles.aiFooter}>
-                <Text style={styles.timestamp}>{log.time}</Text>
-                <TouchableOpacity style={styles.ttsBtn} activeOpacity={0.7}>
-                  <Volume2 size={16} color={Colors.secondary} />
-                  <Text style={styles.ttsText}>Nghe lại</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+      {logs.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Bot size={44} color={Colors.textMuted} />
+          <Text style={styles.emptyTitle}>Chưa có hội thoại nào</Text>
+          <Text style={styles.emptySub}>
+            Hãy chạm vào biểu tượng micro để bắt đầu trò chuyện hoặc đặt báo thức!
+          </Text>
         </View>
-      ))}
+      ) : (
+        logs.map((log) => (
+          <View key={log.id} style={styles.chatGroup}>
+            {/* User Input bubble */}
+            <View style={styles.userBubbleWrapper}>
+              <View style={styles.userBubble}>
+                <Text style={styles.userText}>{log.userInput}</Text>
+              </View>
+              <View style={styles.userAvatar}>
+                <User size={16} color="#FFFFFF" />
+              </View>
+            </View>
+
+            {/* AI Response bubble */}
+            <View style={styles.aiBubbleWrapper}>
+              <View style={styles.aiAvatar}>
+                <Bot size={16} color="#FFFFFF" />
+              </View>
+              <View style={styles.aiBubble}>
+                <View style={styles.intentHeaderRow}>
+                  <View style={styles.intentBadge}>
+                    <Sparkles size={12} color={Colors.secondary} />
+                    <Text style={styles.intentText}>{log.detectedIntent}</Text>
+                  </View>
+                  {log.isOffline && (
+                    <View style={styles.offlineBadge}>
+                      <WifiOff size={11} color={Colors.textMuted} />
+                      <Text style={styles.offlineText}>Offline</Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.aiText}>{log.aiResponse}</Text>
+
+                <View style={styles.aiFooter}>
+                  <Text style={styles.timestamp}>
+                    {formatLogTime(log.timestamp)}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.ttsBtn}
+                    onPress={() => handleReplay(log.aiResponse)}
+                    activeOpacity={0.7}
+                  >
+                    <Volume2 size={16} color={Colors.secondary} />
+                    <Text style={styles.ttsText}>Nghe lại</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        ))
+      )}
     </ScrollView>
   );
 };
@@ -87,7 +141,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 100,
+    paddingBottom: 110,
   },
   screenTitle: {
     ...Typography.titleLarge,
@@ -99,15 +153,32 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 20,
   },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 24,
+  },
+  emptyTitle: {
+    ...Typography.titleMedium,
+    color: Colors.textPrimary,
+    marginTop: 14,
+  },
+  emptySub: {
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 6,
+  },
   chatGroup: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   userBubbleWrapper: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'flex-end',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   userBubble: {
     backgroundColor: Colors.primary,
@@ -152,6 +223,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  intentHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
   intentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -161,12 +238,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    marginBottom: 8,
   },
   intentText: {
     fontSize: 11,
     fontWeight: '600',
     color: Colors.secondary,
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: Colors.surfaceSubtle,
+  },
+  offlineText: {
+    fontSize: 10,
+    color: Colors.textMuted,
   },
   aiText: {
     ...Typography.bodyLarge,
