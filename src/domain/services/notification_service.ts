@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { Alarm, Reminder } from '@domain/entities';
 import { responseGenerator } from '@features/ai/response/response_generator';
 import { useSettingsStore } from '@shared/stores/useSettingsStore';
+import { NativeAlarmBridge } from '@core/utils/native_alarm_bridge';
 
 // Configure foreground notification behavior
 Notifications.setNotificationHandler({
@@ -22,25 +23,60 @@ export class NotificationService {
     if (this.isInitialized) return;
 
     if (Platform.OS === 'android') {
-      // 1. Channel for Alarms (High priority)
+      // 1. Channel for Alarms (MAX priority, Alarm Audio Stream, Public Lockscreen, DND Bypass)
       await Notifications.setNotificationChannelAsync('alarms_channel', {
         name: 'Chuông Báo Thức',
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 250, 500],
+        vibrationPattern: [0, 800, 400, 800, 400, 800],
         lightColor: '#6366F1',
         sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         bypassDnd: true,
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.ALARM,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+          flags: {
+            enforceAudibility: true,
+            requestHardwareAudioVideoSynchronization: false,
+          },
+        },
       });
 
       // 2. Channel for Reminders
       await Notifications.setNotificationChannelAsync('reminders_channel', {
         name: 'Lời Nhắc Nhở',
         importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
+        vibrationPattern: [0, 400, 250, 400],
         lightColor: '#38BDF8',
         sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
+
+      // 3. Register Action Buttons for notifications
+      try {
+        await Notifications.setNotificationCategoryAsync('alarm_actions', [
+          {
+            identifier: 'TALK_TO_AI',
+            buttonTitle: '☀️ Nói chuyện với AI',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'SNOOZE_5_MIN',
+            buttonTitle: '⏰ Báo lại 5 phút',
+            options: {
+              opensAppToForeground: false,
+            },
+          },
+        ]);
+      } catch (e) {
+        // Fallback if category unsupported
+      }
     }
 
     this.isInitialized = true;
@@ -71,13 +107,18 @@ export class NotificationService {
    */
   async scheduleAlarm(alarm: Alarm, bodyMessage?: string): Promise<string> {
     await this.init();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(alarm.time) ||
+      alarm.repeatDays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) {
+      throw new Error('Giờ hoặc ngày lặp báo thức không hợp lệ.');
+    }
+    if (Platform.OS === 'android') await NativeAlarmBridge.ensureReady();
 
     const [hourStr, minuteStr] = alarm.time.split(':');
     const hour = parseInt(hourStr, 10);
     const minute = parseInt(minuteStr, 10);
 
     // Cancel existing notification for this alarm if any
-    await this.cancel(alarm.id);
+    await this.cancelExpoNotifications(alarm.id);
 
     const tone = useSettingsStore.getState().toneStyle || 'friendly';
     const alertInfo = responseGenerator.generateAlarmAlert(
@@ -90,11 +131,28 @@ export class NotificationService {
     const body = bodyMessage || alertInfo.body;
     const spokenText = alertInfo.spokenText;
 
+    if (Platform.OS === 'android') {
+      const targetDate = new Date();
+      targetDate.setHours(hour, minute, 0, 0);
+      while (targetDate.getTime() <= Date.now() ||
+        (alarm.repeatDays.length > 0 && !alarm.repeatDays.includes((targetDate.getDay() + 6) % 7))) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+      await NativeAlarmBridge.setExactAlarm({
+        id: alarm.id, triggerDate: targetDate, label: alarm.label || 'Báo thức',
+        timeStr: alarm.time, spokenText, repeatDays: alarm.repeatDays, vibrate: alarm.vibrate,
+      });
+      return alarm.id;
+    }
+
     const content: Notifications.NotificationContentInput = {
       title,
       body,
       sound: 'default',
       priority: Notifications.AndroidNotificationPriority.MAX,
+      categoryIdentifier: 'alarm_actions',
+      vibrate: [0, 800, 400, 800, 400, 800],
+      sticky: true,
       data: {
         type: 'alarm',
         alarmId: alarm.id,
@@ -114,6 +172,7 @@ export class NotificationService {
         hour,
         minute,
         repeats: true,
+        channelId: 'alarms_channel',
       };
 
       primaryId = await Notifications.scheduleNotificationAsync({
@@ -145,6 +204,7 @@ export class NotificationService {
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: burstDate,
+            channelId: 'alarms_channel',
           },
         });
         if (i === 0) primaryId = burstId;
@@ -213,6 +273,7 @@ export class NotificationService {
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: burstDate,
+          channelId: 'reminders_channel',
         },
       });
       if (i === 0) primaryId = burstId;
@@ -234,6 +295,23 @@ export class NotificationService {
     });
     const alertInfo = responseGenerator.generateAlarmAlert('Thử nghiệm báo thức', nowTime, tone);
 
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('Số giây phải lớn hơn 0.');
+    if (Platform.OS === 'android') {
+      await NativeAlarmBridge.ensureReady();
+      await this.cancel('test_alarm_native');
+      for (let i = 0; i < 3; i++) {
+        await Notifications.cancelScheduledNotificationAsync(`test_alarm_burst_${i}`);
+      }
+      await NativeAlarmBridge.setExactAlarm({
+        id: 'test_alarm_native',
+        triggerDate: new Date(Date.now() + seconds * 1000),
+        label: 'Thử nghiệm báo thức',
+        timeStr: nowTime,
+        spokenText: alertInfo.spokenText,
+      });
+      return;
+    }
+
     for (let i = 0; i < 3; i++) {
       await Notifications.scheduleNotificationAsync({
         identifier: `test_alarm_burst_${i}`,
@@ -242,6 +320,9 @@ export class NotificationService {
           body: i === 0 ? alertInfo.body : 'Chạm vào thông báo này để nghe AI cất giọng ngay lập tức! ✨',
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority.MAX,
+          categoryIdentifier: 'alarm_actions',
+          vibrate: [0, 800, 400, 800, 400, 800],
+          sticky: true,
           data: {
             type: 'alarm',
             time: nowTime,
@@ -252,6 +333,7 @@ export class NotificationService {
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: Math.max(1, seconds + i * 4),
+          channelId: 'alarms_channel',
         },
       });
     }
@@ -292,6 +374,7 @@ export class NotificationService {
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: Math.max(1, seconds + i * 4),
+          channelId: 'reminders_channel',
         },
       });
     }
@@ -301,12 +384,15 @@ export class NotificationService {
    * Cancel scheduled notification by ID
    */
   async cancel(identifier: string): Promise<void> {
+    await NativeAlarmBridge.cancelAlarm(identifier);
+    await this.cancelExpoNotifications(identifier);
+  }
+
+  private async cancelExpoNotifications(identifier: string): Promise<void> {
     try {
       await Notifications.cancelScheduledNotificationAsync(identifier);
       for (let i = 0; i < 5; i++) {
         await Notifications.cancelScheduledNotificationAsync(`${identifier}_burst_${i}`);
-        await Notifications.cancelScheduledNotificationAsync(`test_alarm_burst_${i}`);
-        await Notifications.cancelScheduledNotificationAsync(`test_reminder_burst_${i}`);
       }
     } catch {
       // Ignore if doesn't exist
@@ -317,6 +403,7 @@ export class NotificationService {
    * Cancel all notifications
    */
   async cancelAll(): Promise<void> {
+    await NativeAlarmBridge.cancelAll();
     await Notifications.cancelAllScheduledNotificationsAsync();
   }
 }

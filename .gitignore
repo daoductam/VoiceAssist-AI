@@ -23,5 +23,12 @@ web-build/
 android/
 ios/
 
-# Agents / AI config (keep .agents/ but ignore local state)
+# Agents / AI config & local state
+.agents/
+agents/
 .codegraph/
+
+# Local build artifacts & binaries
+artifacts/
+*.aar
+*.apk

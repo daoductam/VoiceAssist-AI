@@ -8,12 +8,14 @@ import {
   TextInput,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { ToneStyle } from '@domain/enums';
 import { useSettingsStore } from '@shared/stores/useSettingsStore';
 import { ttsService } from '@features/voice/tts_service';
+import { AndroidBatteryOptimizer } from '@core/utils/android_battery_optimizer';
 import {
   KeyRound,
   CheckCircle2,
@@ -23,6 +25,8 @@ import {
   Smile,
   ShieldCheck,
   Save,
+  BatteryCharging,
+  ExternalLink,
 } from 'lucide-react-native';
 
 export const SettingsScreen: React.FC = () => {
@@ -221,6 +225,33 @@ export const SettingsScreen: React.FC = () => {
           thumbColor={ttsEnabled ? '#FFFFFF' : Colors.textMuted}
         />
       </View>
+
+      {/* Android Background Execution & Battery Optimization */}
+      {Platform.OS === 'android' && (
+        <View style={styles.androidSection}>
+          <Text style={styles.sectionHeaderTitle}>Tối ưu hóa chạy ngầm (Android)</Text>
+          <View style={styles.batteryCard}>
+            <View style={styles.batteryHeader}>
+              <BatteryCharging size={22} color={Colors.warning} />
+              <View style={styles.batteryHeaderText}>
+                <Text style={styles.batteryTitle}>Đảm bảo báo thức luôn đúng giờ</Text>
+                <Text style={styles.batteryDesc}>
+                  Các dòng máy Xiaomi, Samsung, Oppo thường ngắt ứng dụng chạy ngầm khi tắt màn hình qua đêm.
+                  Hãy bật "Không hạn chế pin" để chuông luôn reo chuẩn xác.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.batteryActionBtn}
+              onPress={() => AndroidBatteryOptimizer.requestIgnoreBatteryOptimizations()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.batteryActionBtnText}>Mở cài đặt Pin không hạn chế</Text>
+              <ExternalLink size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 };
@@ -368,5 +399,49 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  androidSection: {
+    marginTop: 10,
+  },
+  batteryCard: {
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.25)', // Subtle warning highlight
+  },
+  batteryHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  batteryHeaderText: {
+    flex: 1,
+  },
+  batteryTitle: {
+    ...Typography.labelLarge,
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  batteryDesc: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  batteryActionBtn: {
+    marginTop: 14,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  batteryActionBtnText: {
+    ...Typography.labelMedium,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

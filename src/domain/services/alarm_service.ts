@@ -49,12 +49,13 @@ export class AlarmService {
 
     await alarmDao.insert(newAlarm);
 
-    // Automatically schedule local notification
+    // A single scheduler owns delivery on each platform.
     if (newAlarm.isActive) {
       try {
         await notificationService.scheduleAlarm(newAlarm);
       } catch (err) {
-        console.warn('Failed to schedule alarm notification:', err);
+        await alarmDao.delete(newAlarm.id);
+        throw err;
       }
     }
 
@@ -63,35 +64,22 @@ export class AlarmService {
 
   async toggle(id: string, isActive: boolean): Promise<void> {
     const alarm = await this.getById(id);
-    await alarmDao.toggleActive(id, isActive);
-
     if (isActive) {
-      try {
-        await notificationService.scheduleAlarm({ ...alarm, isActive: true });
-      } catch (err) {
-        console.warn('Failed to schedule alarm notification on toggle:', err);
-      }
+      await notificationService.scheduleAlarm({ ...alarm, isActive: true });
     } else {
-      try {
-        await notificationService.cancel(id);
-      } catch (err) {
-        console.warn('Failed to cancel alarm notification on toggle:', err);
-      }
+      await notificationService.cancel(id);
     }
+    await alarmDao.toggleActive(id, isActive);
   }
 
   async delete(id: string): Promise<void> {
     await this.getById(id);
+    await notificationService.cancel(id);
     await alarmDao.delete(id);
-    try {
-      await notificationService.cancel(id);
-    } catch (err) {
-      console.warn('Failed to cancel alarm notification on delete:', err);
-    }
   }
 
   /**
-   * Resync all active alarms into expo-notifications on app startup or reload
+   * Resync all active alarms into expo-notifications and native AlarmManager on app startup or reload
    */
   async syncAllActiveAlarms(): Promise<void> {
     try {
@@ -110,4 +98,3 @@ export class AlarmService {
 }
 
 export const alarmService = new AlarmService();
-

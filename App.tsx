@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@core/theme/colors';
@@ -14,6 +14,7 @@ import { setAudioModeAsync } from 'expo-audio';
 import { notificationService } from '@domain/services/notification_service';
 import { alarmService } from '@domain/services/alarm_service';
 import { reminderService } from '@domain/services/reminder_service';
+import { AlarmPermissionError, NativeAlarmBridge } from '@core/utils/native_alarm_bridge';
 
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
 
@@ -22,6 +23,36 @@ export default function App() {
   const [isListening, setIsListening] = useState<boolean>(false);
 
   const { ringingAlarm, openRingingAlarm, closeRingingAlarm } = useAlarmStore();
+
+  useEffect(() => {
+    let disposed = false;
+    let requestVersion = 0;
+    const syncNativeAlarm = async () => {
+      const version = ++requestVersion;
+      try {
+        const active = await NativeAlarmBridge.getActiveAlarm();
+        if (disposed || version !== requestVersion || AppState.currentState !== 'active') return;
+        const current = useAlarmStore.getState().ringingAlarm;
+        if (active && active.occurrenceId !== current.occurrenceId) {
+          openRingingAlarm({ ...active, type: 'alarm', nativeAudio: true });
+        } else if (!active && current.nativeAudio && current.visible) {
+          closeRingingAlarm();
+        }
+      } catch (error) {
+        console.warn('Could not read active native alarm:', error);
+      }
+    };
+    const unsubscribe = NativeAlarmBridge.subscribe(() => { void syncNativeAlarm(); });
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void syncNativeAlarm();
+    });
+    void syncNativeAlarm();
+    return () => {
+      disposed = true;
+      unsubscribe();
+      appStateSubscription.remove();
+    };
+  }, [openRingingAlarm, closeRingingAlarm]);
 
   useEffect(() => {
     // 1. Enable audio playback in silent mode on iOS
@@ -38,6 +69,8 @@ export default function App() {
     // 3. Listen for incoming notification while app is in foreground
     const receivedSub = Notifications.addNotificationReceivedListener(
       (notification) => {
+        const current = useAlarmStore.getState().ringingAlarm;
+        if (current.nativeAudio && current.visible) return;
         const data = notification.request.content.data;
         if (data && (data.type === 'alarm' || data.type === 'reminder')) {
           openRingingAlarm({
@@ -63,6 +96,8 @@ export default function App() {
     // ZERO-FRICTION 1-TAP TO TALK: User taps banner -> immediately opens modal & plays voice
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
+        const current = useAlarmStore.getState().ringingAlarm;
+        if (current.nativeAudio && current.visible) return;
         const data = response.notification.request.content.data;
         if (data && (data.type === 'alarm' || data.type === 'reminder')) {
           openRingingAlarm({
@@ -99,6 +134,9 @@ export default function App() {
   };
 
   const handleDismissAlarm = async () => {
+    if (ringingAlarm.nativeAudio && ringingAlarm.id) {
+      await NativeAlarmBridge.stopRinging(ringingAlarm.id);
+    }
     if (ringingAlarm.type === 'reminder' && ringingAlarm.id) {
       try {
         await reminderService.complete(ringingAlarm.id, true);
@@ -110,6 +148,13 @@ export default function App() {
   };
 
   const handleSnoozeAlarm = () => {
+    if (ringingAlarm.nativeAudio && ringingAlarm.id) {
+      NativeAlarmBridge.snooze(ringingAlarm.id).then(closeRingingAlarm).catch(error => {
+        if (error instanceof AlarmPermissionError) return;
+        Alert.alert('Chưa thể hoãn báo thức', (error as Error).message);
+      });
+      return;
+    }
     const isReminder = ringingAlarm.type === 'reminder';
     const snoozeLabel = ringingAlarm.label;
     const snoozeType = ringingAlarm.type;
@@ -169,6 +214,8 @@ export default function App() {
           alarmTime={ringingAlarm.time}
           greetingText={ringingAlarm.spokenText}
           spokenText={ringingAlarm.spokenText}
+          nativeAudio={ringingAlarm.nativeAudio}
+          alarmId={ringingAlarm.id}
           onDismiss={handleDismissAlarm}
           onSnooze={handleSnoozeAlarm}
         />

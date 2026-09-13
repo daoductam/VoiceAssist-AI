@@ -29,7 +29,13 @@
         "RECORD_AUDIO",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
-        "SCHEDULE_EXACT_ALARM"
+        "SCHEDULE_EXACT_ALARM",
+        "USE_FULL_SCREEN_INTENT",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.USE_FULL_SCREEN_INTENT"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -39,7 +45,14 @@
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      "expo-audio"
-    ]
+      "expo-audio",
+      "./plugins/withAndroidAlarm"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f672287b-e183-481b-b060-57b958166dad"
+      }
+    },
+    "owner": "daoductam"
   }
 }

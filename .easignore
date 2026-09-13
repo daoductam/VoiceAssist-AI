@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Build caches
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+android/build/
+
+# Package files
+*.apk
+*.aab
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Config
+.env*.local
+.agents/
+.codegraph/

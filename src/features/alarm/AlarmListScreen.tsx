@@ -28,6 +28,7 @@ import { useReminderStore } from '@shared/stores/useReminderStore';
 import { useTodoStore } from '@shared/stores/useTodoStore';
 import { notificationService } from '@domain/services/notification_service';
 import { ttsService } from '@features/voice/tts_service';
+import { AlarmPermissionError } from '@core/utils/native_alarm_bridge';
 
 type SubTab = 'alarms' | 'reminders' | 'todos';
 
@@ -106,6 +107,7 @@ export const AlarmListScreen: React.FC = () => {
         });
       }, 1000);
     } catch (e) {
+      if (e instanceof AlarmPermissionError) return;
       Alert.alert('Lỗi', 'Không thể kích hoạt chuông thử: ' + (e as Error).message);
     }
   };
@@ -192,6 +194,7 @@ export const AlarmListScreen: React.FC = () => {
       setShowAddModal(false);
       Alert.alert('Thành công 🎉', `Đã đặt báo thức lúc ${inputTime}!`);
     } catch (e) {
+      if (e instanceof AlarmPermissionError) return;
       Alert.alert('Lỗi', 'Không thể tạo báo thức: ' + (e as Error).message);
     }
   };
@@ -461,7 +464,10 @@ export const AlarmListScreen: React.FC = () => {
                       <Switch
                         value={alarm.isActive}
                         onValueChange={() =>
-                          toggleAlarm(alarm.id, !alarm.isActive)
+                          toggleAlarm(alarm.id, !alarm.isActive).catch(error => {
+                            if (error instanceof AlarmPermissionError) return;
+                            Alert.alert('Không đổi được báo thức', (error as Error).message);
+                          })
                         }
                         trackColor={{
                           false: Colors.border,

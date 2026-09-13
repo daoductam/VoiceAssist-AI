@@ -9,6 +9,8 @@ export interface RingingAlarmState {
   label: string;
   time: string;
   spokenText?: string;
+  nativeAudio?: boolean;
+  occurrenceId?: string;
 }
 
 interface AlarmStoreState {
@@ -23,6 +25,8 @@ interface AlarmStoreState {
     label?: string;
     time?: string;
     spokenText?: string;
+    nativeAudio?: boolean;
+    occurrenceId?: string;
   }) => void;
   closeRingingAlarm: () => void;
 
@@ -64,6 +68,8 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
             minute: '2-digit',
           }),
         spokenText: params?.spokenText,
+        nativeAudio: params?.nativeAudio ?? false,
+        occurrenceId: params?.occurrenceId,
       },
     });
   },
