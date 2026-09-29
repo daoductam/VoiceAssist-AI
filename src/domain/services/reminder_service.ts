@@ -8,7 +8,7 @@ export class ReminderService {
     return reminderDao.getAll();
   }
 
-  async getUpcoming(limit: number = 10): Promise<Reminder[]> {
+  async getUpcoming(limit?: number): Promise<Reminder[]> {
     return reminderDao.getUpcoming(limit);
   }
 

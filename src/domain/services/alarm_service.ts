@@ -1,6 +1,6 @@
 import { Alarm } from '@domain/entities';
 import { alarmDao } from '@data/daos/alarm_dao';
-import { ValidationException, NotFoundException } from '@core/exceptions/app_exception';
+import { NotFoundException, ValidationException } from '@core/exceptions/app_exception';
 import { notificationService } from '@domain/services/notification_service';
 
 export class AlarmService {
@@ -24,10 +24,9 @@ export class AlarmService {
     ringtoneUri?: string;
   }): Promise<Alarm> {
     // Validate time format: "HH:mm"
-    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-    if (!timeRegex.test(params.time)) {
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(params.time)) {
       throw new ValidationException(
-        `Định dạng giờ không hợp lệ: "${params.time}". Cần có dạng HH:mm (00:00 - 23:59).`
+        'Giờ báo thức không hợp lệ. Vui lòng dùng định dạng HH:mm.'
       );
     }
 
@@ -60,6 +59,51 @@ export class AlarmService {
     }
 
     return newAlarm;
+  }
+
+  async update(id: string, params: { time: string; label?: string }): Promise<Alarm> {
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(params.time)) {
+      throw new ValidationException(
+        'Giờ báo thức không hợp lệ. Vui lòng dùng định dạng HH:mm.'
+      );
+    }
+
+    const alarm = await this.getById(id);
+    if (alarm.repeatDays.length === 0) {
+      const [hour, minute] = params.time.split(':').map(Number);
+      const target = new Date();
+      target.setHours(hour, minute, 0, 0);
+      if (target.getTime() <= Date.now() + 5000) {
+        throw new ValidationException(
+          'Thời gian báo thức đã qua. Vui lòng chọn thời gian khác.'
+        );
+      }
+    }
+
+    const updatedAlarm: Alarm = {
+      ...alarm,
+      time: params.time,
+      label: params.label?.trim() || alarm.label,
+      updatedAt: new Date().toISOString(),
+      syncStatus: 'pending',
+    };
+
+    await alarmDao.update(updatedAlarm);
+    try {
+      if (updatedAlarm.isActive) {
+        await notificationService.scheduleAlarm(updatedAlarm);
+      } else {
+        await notificationService.cancel(id);
+      }
+    } catch (error) {
+      await alarmDao.update(alarm);
+      if (alarm.isActive) {
+        await notificationService.scheduleAlarm(alarm).catch(() => undefined);
+      }
+      throw error;
+    }
+
+    return updatedAlarm;
   }
 
   async toggle(id: string, isActive: boolean): Promise<void> {

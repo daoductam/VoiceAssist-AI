@@ -38,6 +38,7 @@ interface AlarmStoreState {
     vibrate?: boolean;
     ringtoneUri?: string;
   }) => Promise<Alarm>;
+  updateAlarm: (id: string, params: { time: string; label?: string }) => Promise<Alarm>;
   toggleAlarm: (id: string, isActive: boolean) => Promise<void>;
   deleteAlarm: (id: string) => Promise<void>;
 }
@@ -104,6 +105,24 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
       return newAlarm;
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Lỗi khi tạo báo thức';
+      set({ error: errorMsg, loading: false });
+      throw err;
+    }
+  },
+
+  updateAlarm: async (id, params) => {
+    set({ loading: true, error: null });
+    try {
+      const updatedAlarm = await alarmService.update(id, params);
+      set((state) => ({
+        alarms: state.alarms
+          .map((alarm) => alarm.id === id ? updatedAlarm : alarm)
+          .sort((a, b) => a.time.localeCompare(b.time)),
+        loading: false,
+      }));
+      return updatedAlarm;
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Lỗi khi sửa báo thức';
       set({ error: errorMsg, loading: false });
       throw err;
     }

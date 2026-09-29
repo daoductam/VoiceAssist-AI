@@ -9,7 +9,11 @@ export class VietnameseTimeParser {
   /**
    * Parse a natural language Vietnamese string to extract Date/Time
    */
-  parse(text: string, referenceTime: Date = new Date()): Date | null {
+  parse(
+    text: string,
+    referenceTime: Date = new Date(),
+    options: { rollPastTimeToTomorrow?: boolean } = {}
+  ): Date | null {
     if (!text || text.trim().length === 0) {
       return null;
     }
@@ -47,7 +51,10 @@ export class VietnameseTimeParser {
       targetDate.setDate(targetDate.getDate() + 1);
     } else {
       // If no explicit day mentioned and target time has already passed today, assume tomorrow
-      if (targetDate.getTime() <= referenceTime.getTime()) {
+      if (
+        options.rollPastTimeToTomorrow !== false &&
+        targetDate.getTime() <= referenceTime.getTime()
+      ) {
         targetDate.setDate(targetDate.getDate() + 1);
       }
     }

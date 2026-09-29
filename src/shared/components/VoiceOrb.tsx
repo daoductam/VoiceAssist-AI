@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
-import { Mic, Radio, Sparkles, Volume2 } from 'lucide-react-native';
+import { Mic, Radio, Sparkles, Volume2, Play } from 'lucide-react-native';
 import { Colors } from '@core/theme/colors';
 import { VoiceOrbState } from '@domain/enums';
 
@@ -98,6 +98,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
         return Colors.ambientPurple;
       case 'speaking':
         return Colors.ambientPink;
+      case 'paused':
+        return Colors.warning;
       default:
         return Colors.primary;
     }
@@ -111,6 +113,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
         return 'rgba(168, 85, 247, 0.4)';
       case 'speaking':
         return 'rgba(236, 72, 153, 0.4)';
+      case 'paused':
+        return 'rgba(251, 191, 36, 0.3)';
       default:
         return Colors.primaryGlow;
     }
@@ -125,6 +129,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
         return <Sparkles size={iconSize} color="#FFFFFF" />;
       case 'speaking':
         return <Volume2 size={iconSize} color="#FFFFFF" />;
+      case 'paused':
+        return <Play size={iconSize} color="#FFFFFF" />;
       default:
         return <Mic size={iconSize} color="#FFFFFF" />;
     }

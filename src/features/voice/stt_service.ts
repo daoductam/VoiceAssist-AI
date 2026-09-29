@@ -16,8 +16,9 @@ export class SttService {
     return granted;
   }
 
-  async startRecording(): Promise<void> {
+  async startRecording(signal?: AbortSignal): Promise<void> {
     const hasPermission = await this.requestPermissions();
+    this.throwIfAborted(signal);
     if (!hasPermission) {
       throw new Error('Chưa được cấp quyền sử dụng micro.');
     }
@@ -26,31 +27,50 @@ export class SttService {
       allowsRecording: true,
       playsInSilentMode: true,
     });
+    this.throwIfAborted(signal);
 
     const recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
     await recorder.prepareToRecordAsync();
+    if (signal?.aborted) {
+      await recorder.stop().catch(() => undefined);
+      this.throwIfAborted(signal);
+    }
     recorder.record();
     this.recorder = recorder;
   }
 
-  async stopRecordingAndTranscribe(): Promise<string> {
+  async cancelRecording(): Promise<void> {
+    const recorder = this.recorder;
+    this.recorder = null;
+    if (!recorder) return;
+    try {
+      await recorder.stop();
+    } catch {
+      // The recorder may already have stopped while transcription began.
+    }
+  }
+
+  async stopRecordingAndTranscribe(signal?: AbortSignal): Promise<string> {
+    this.throwIfAborted(signal);
     if (!this.recorder) {
       return '';
     }
 
-    await this.recorder.stop();
-    const uri = this.recorder.uri;
+    const recorder = this.recorder;
     this.recorder = null;
+    await recorder.stop();
+    this.throwIfAborted(signal);
+    const uri = recorder.uri;
 
     if (!uri) {
       return '';
     }
 
     // Transcribe with Groq Whisper API
-    return this.transcribeWithGroq(uri);
+    return this.transcribeWithGroq(uri, signal);
   }
 
-  private async transcribeWithGroq(audioUri: string): Promise<string> {
+  private async transcribeWithGroq(audioUri: string, signal?: AbortSignal): Promise<string> {
     let apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     try {
       const storedKey = await SecureStore.getItemAsync(
@@ -82,6 +102,7 @@ export class SttService {
             model: APP_CONSTANTS.GROQ_WHISPER_MODEL,
             language: 'vi',
           },
+          signal,
           headers: {
             Authorization: `Bearer ${apiKey}`,
           },
@@ -91,16 +112,18 @@ export class SttService {
       const result = await uploadTask.uploadAsync();
 
       if (result.status >= 200 && result.status < 300) {
+        this.throwIfAborted(signal);
         const data = JSON.parse(result.body) as { text?: string };
         return data.text ? data.text.trim() : '';
       } else {
         throw new Error(`Lỗi Groq Whisper (${result.status}): ${result.body}`);
       }
     } catch (err: unknown) {
+      this.throwIfAborted(signal);
       console.warn('Native UploadTask failed, trying fallback:', err);
       // Fallback: fetch with blob
       try {
-        const fileData = await fetch(audioUri);
+        const fileData = await fetch(audioUri, { signal });
         const blob = await fileData.blob();
 
         const formData = new FormData();
@@ -116,10 +139,12 @@ export class SttService {
               Authorization: `Bearer ${apiKey}`,
             },
             body: formData,
+            signal,
           }
         );
 
         if (response.ok) {
+          this.throwIfAborted(signal);
           const data = (await response.json()) as { text?: string };
           return data.text ? data.text.trim() : '';
         }
@@ -133,6 +158,13 @@ export class SttService {
 
   isRecording(): boolean {
     return this.recorder?.isRecording ?? false;
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (!signal?.aborted) return;
+    const error = new Error('Yêu cầu đã bị hủy.');
+    error.name = 'AbortError';
+    throw error;
   }
 }
 

@@ -2,15 +2,31 @@ import * as SQLite from 'expo-sqlite';
 import { APP_CONSTANTS } from '@core/constants';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
+let dbInitialization: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (dbInstance) {
-    return dbInstance;
+  if (dbInstance) return dbInstance;
+
+  if (!dbInitialization) {
+    dbInitialization = (async () => {
+      const db = await SQLite.openDatabaseAsync(APP_CONSTANTS.DATABASE_NAME);
+      try {
+        await initializeDatabase(db);
+        dbInstance = db;
+        return db;
+      } catch (error) {
+        await db.closeAsync().catch(() => undefined);
+        throw error;
+      }
+    })();
   }
 
-  dbInstance = await SQLite.openDatabaseAsync(APP_CONSTANTS.DATABASE_NAME);
-  await initializeDatabase(dbInstance);
-  return dbInstance;
+  try {
+    return await dbInitialization;
+  } catch (error) {
+    dbInitialization = null;
+    throw error;
+  }
 }
 
 async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<void> {

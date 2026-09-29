@@ -58,15 +58,27 @@ export const SettingsScreen: React.FC = () => {
     Alert.alert('Thành công', 'Đã lưu khóa bí mật Groq API an toàn!');
   };
 
-  const handleToneSelect = (tone: ToneStyle) => {
-    setToneStyle(tone);
+  const handleToneSelect = async (tone: ToneStyle) => {
+    try {
+      await setToneStyle(tone);
+    } catch {
+      Alert.alert('Không lưu được', 'Không thể lưu phong cách giọng nói. Vui lòng thử lại.');
+      return;
+    }
+
     if (ttsEnabled) {
-      if (tone === 'friendly') {
-        ttsService.speak('Chào bạn! Mình là trợ lý thân thiện của bạn nhé!');
-      } else if (tone === 'professional') {
-        ttsService.speak('Hệ thống trợ lý chuyên nghiệp đã được kích hoạt.');
-      } else {
-        ttsService.speak('Dạ vâng ạ! Em là trợ lý dễ thương của bạn nè! 💖');
+      const sampleText = tone === 'friendly'
+        ? 'Chào bạn! Mình là trợ lý thân thiện của bạn nhé!'
+        : tone === 'professional'
+        ? 'Hệ thống trợ lý chuyên nghiệp đã được kích hoạt.'
+        : 'Dạ vâng ạ! Em là trợ lý dễ thương của bạn nè! 💖';
+      try {
+        await ttsService.speak(sampleText);
+      } catch (error) {
+        Alert.alert(
+          'Không phát được giọng Việt',
+          error instanceof Error ? error.message : 'Hãy kiểm tra cài đặt giọng nói của thiết bị.'
+        );
       }
     }
   };

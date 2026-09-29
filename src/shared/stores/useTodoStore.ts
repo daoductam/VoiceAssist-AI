@@ -13,6 +13,7 @@ interface TodoStoreState {
     dueDate?: string;
     priority?: 'low' | 'medium' | 'high';
   }) => Promise<Todo>;
+  updateTodo: (id: string, params: { title: string }) => Promise<Todo>;
   toggleTodo: (id: string, isDone: boolean) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
 }
@@ -44,6 +45,22 @@ export const useTodoStore = create<TodoStoreState>((set, get) => ({
       return newTodo;
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Lỗi khi tạo công việc';
+      set({ error: errorMsg, loading: false });
+      throw err;
+    }
+  },
+
+  updateTodo: async (id, params) => {
+    set({ loading: true, error: null });
+    try {
+      const updatedTodo = await todoService.updateTitle(id, params.title);
+      set((state) => ({
+        todos: state.todos.map((todo) => todo.id === id ? updatedTodo : todo),
+        loading: false,
+      }));
+      return updatedTodo;
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Lỗi khi sửa công việc';
       set({ error: errorMsg, loading: false });
       throw err;
     }

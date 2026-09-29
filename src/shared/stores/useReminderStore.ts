@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import { Reminder } from '@domain/entities';
 import { reminderService } from '@domain/services/reminder_service';
 
+const isUpcoming = (reminder: Reminder, now = Date.now()) => {
+  const remindAt = new Date(reminder.remindAt).getTime();
+  return !reminder.isCompleted && Number.isFinite(remindAt) && remindAt > now;
+};
+
+const sortByRemindAt = (reminders: Reminder[]) =>
+  reminders.sort(
+    (a, b) => new Date(a.remindAt).getTime() - new Date(b.remindAt).getTime()
+  );
+
 interface ReminderStoreState {
   reminders: Reminder[];
   upcomingReminders: Reminder[];
@@ -45,8 +55,10 @@ export const useReminderStore = create<ReminderStoreState>((set, get) => ({
       const newReminder = await reminderService.create(params);
       set((state) => ({
         reminders: [newReminder, ...state.reminders],
-        upcomingReminders: [newReminder, ...state.upcomingReminders].sort(
-          (a, b) => new Date(a.remindAt).getTime() - new Date(b.remindAt).getTime()
+        upcomingReminders: sortByRemindAt(
+          isUpcoming(newReminder)
+            ? [newReminder, ...state.upcomingReminders.filter(isUpcoming)]
+            : state.upcomingReminders.filter(isUpcoming)
         ),
         loading: false,
       }));
@@ -59,14 +71,21 @@ export const useReminderStore = create<ReminderStoreState>((set, get) => ({
   },
 
   completeReminder: async (id: string, isCompleted: boolean) => {
-    set((state) => ({
-      reminders: state.reminders.map((r) =>
-        r.id === id ? { ...r, isCompleted } : r
-      ),
-      upcomingReminders: state.upcomingReminders.filter((r) =>
-        isCompleted ? r.id !== id : true
-      ),
-    }));
+    set((state) => {
+      const reminder = state.reminders.find((item) => item.id === id);
+      const updatedReminder = reminder ? { ...reminder, isCompleted } : undefined;
+      const upcoming = state.upcomingReminders.filter(
+        (item) => item.id !== id && isUpcoming(item)
+      );
+      if (updatedReminder && isUpcoming(updatedReminder)) upcoming.push(updatedReminder);
+
+      return {
+        reminders: state.reminders.map((item) =>
+          item.id === id ? { ...item, isCompleted } : item
+        ),
+        upcomingReminders: sortByRemindAt(upcoming),
+      };
+    });
     try {
       await reminderService.complete(id, isCompleted);
     } catch (err: unknown) {

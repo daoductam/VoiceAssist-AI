@@ -45,14 +45,26 @@ export class ReminderDao {
     return row ? mapRowToReminder(row) : null;
   }
 
-  async getUpcoming(limit: number = 10): Promise<Reminder[]> {
+  async getUpcoming(limit?: number): Promise<Reminder[]> {
     const db = await getDatabase();
-    const nowIso = new Date().toISOString();
     const rows = await db.getAllAsync<ReminderRow>(
-      'SELECT * FROM reminders WHERE is_completed = 0 AND remind_at >= ? ORDER BY remind_at ASC LIMIT ?;',
-      [nowIso, limit]
+      'SELECT * FROM reminders WHERE is_completed = 0;'
     );
-    return rows.map(mapRowToReminder);
+    const futureReminders = rows
+      .map(mapRowToReminder)
+      .filter((reminder) => {
+        const remindAt = new Date(reminder.remindAt).getTime();
+        return Number.isFinite(remindAt) && remindAt > Date.now();
+      })
+      .sort((a, b) =>
+        new Date(a.remindAt).getTime() - new Date(b.remindAt).getTime()
+      );
+    const safeLimit = limit === undefined
+      ? futureReminders.length
+      : Number.isFinite(limit)
+      ? Math.max(0, Math.floor(limit))
+      : futureReminders.length;
+    return futureReminders.slice(0, safeLimit);
   }
 
   async insert(reminder: Reminder): Promise<void> {

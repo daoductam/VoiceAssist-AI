@@ -2,7 +2,7 @@ import { APP_CONSTANTS } from '@core/constants';
 import * as SecureStore from 'expo-secure-store';
 
 export interface ToolCallResult {
-  toolName: 'set_alarm' | 'set_reminder' | 'add_todo' | 'query_schedule' | 'none';
+  toolName: 'set_alarm' | 'set_reminder' | 'add_todo' | 'edit_todo' | 'query_schedule' | 'none';
   parameters: Record<string, string>;
   message: string;
 }
@@ -72,6 +72,21 @@ const GROQ_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'edit_todo',
+      description: 'Sửa nội dung một việc đã có trong danh sách. Chỉ gọi khi biết rõ tên việc cũ và nội dung mới; nếu thiếu thông tin thì hỏi lại người dùng.',
+      parameters: {
+        type: 'object',
+        properties: {
+          oldTitle: { type: 'string', description: 'Tên công việc hiện có cần sửa' },
+          newTitle: { type: 'string', description: 'Nội dung mới của công việc' },
+        },
+        required: ['oldTitle', 'newTitle'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'query_schedule',
       description: 'Tra cứu thông tin lịch trình, các báo thức hoặc công việc cần làm hôm nay',
       parameters: {
@@ -102,8 +117,9 @@ export class GroqClient {
     return process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
   }
 
-  async parseIntentWithLlm(userInput: string): Promise<ToolCallResult> {
+  async parseIntentWithLlm(userInput: string, signal?: AbortSignal): Promise<ToolCallResult> {
     const apiKey = await this.getApiKey();
+    if (signal?.aborted) throw new Error('Yêu cầu đã bị hủy.');
     if (!apiKey) {
       return { toolName: 'none', parameters: {}, message: '' };
     }
@@ -127,7 +143,8 @@ Quy tắc xử lý:
 1. Khi người dùng nói về việc thức dậy ("gọi tôi dậy", "báo thức", "dậy lúc..."): PHẢI GỌI function 'set_alarm' với tham số time là giờ HH:mm (24h).
 2. Khi người dùng nói về nhắc việc ("nhắc tôi...", "hẹn giờ uống thuốc", "nhắc tắt bếp"): GỌI function 'set_reminder'.
 3. Khi người dùng muốn ghi nhớ việc cần làm: GỌI function 'add_todo'.
-4. Khi người dùng hỏi thời gian ("mấy giờ rồi", "hôm nay ngày mấy"): Hãy trả lời thời gian thực hiện tại là ${timeString}, ${dateString}.
+4. Khi người dùng muốn đổi hoặc sửa một Todo đã có: GỌI function 'edit_todo' với oldTitle và newTitle. Nếu thiếu một trong hai thông tin, không tự đoán; hãy hỏi lại.
+5. Khi người dùng hỏi thời gian ("mấy giờ rồi", "hôm nay ngày mấy"): Hãy trả lời thời gian thực hiện tại là ${timeString}, ${dateString}.
 Trả lời ngắn gọn, ấm áp và tự nhiên.`;
 
     let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
@@ -146,6 +163,7 @@ Trả lời ngắn gọn, ấm áp và tự nhiên.`;
         tool_choice: 'auto',
         temperature: 0.1,
       }),
+      signal,
     });
 
     // Fallback to secondary model if primary fails
@@ -167,6 +185,7 @@ Trả lời ngắn gọn, ấm áp và tự nhiên.`;
           tool_choice: 'auto',
           temperature: 0.1,
         }),
+          signal,
       });
     }
 
@@ -175,6 +194,7 @@ Trả lời ngắn gọn, ấm áp và tự nhiên.`;
     }
 
     const data = await response.json();
+    if (signal?.aborted) throw new Error('Yêu cầu đã bị hủy.');
     const choice = data.choices?.[0]?.message;
 
     if (choice?.tool_calls && choice.tool_calls.length > 0) {
