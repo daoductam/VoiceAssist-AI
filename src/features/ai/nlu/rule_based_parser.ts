@@ -24,8 +24,10 @@ export class RuleBasedParser implements IntentParser {
     const parsed = segments.map((segment) => this.parse(segment));
     const actionableIntents: IntentType[] = [
       'setAlarm',
+      'cancelAlarm',
       'setReminder',
       'addTodo',
+      'completeTodo',
       'editTodo',
     ];
     return parsed.every((item) => actionableIntents.includes(item.intent))
@@ -78,9 +80,27 @@ export class RuleBasedParser implements IntentParser {
             }
           }
 
+          let confidence = 0.85;
+          if (patternDef.intent === 'setAlarm') {
+            confidence = entities.time ? 0.95 : 0.7;
+          } else if (patternDef.intent === 'cancelAlarm') {
+            confidence = 0.92;
+          } else if (patternDef.intent === 'setReminder') {
+            confidence =
+              entities.title && (entities.targetDate || entities.time)
+                ? 0.95
+                : 0.75;
+          } else if (patternDef.intent === 'addTodo') {
+            confidence = entities.title ? 0.95 : 0.65;
+          } else if (patternDef.intent === 'completeTodo') {
+            confidence = entities.title ? 0.92 : 0.7;
+          } else if (patternDef.intent === 'querySchedule') {
+            confidence = 0.9;
+          }
+
           return {
             intent: patternDef.intent,
-            confidence: 0.85,
+            confidence,
             entities,
             rawText: raw,
           };

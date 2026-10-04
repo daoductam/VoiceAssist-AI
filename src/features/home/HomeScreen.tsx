@@ -19,6 +19,11 @@ import { useAlarmStore } from '@shared/stores/useAlarmStore';
 import { useReminderStore } from '@shared/stores/useReminderStore';
 import { useSettingsStore } from '@shared/stores/useSettingsStore';
 import { voicePipeline } from '@features/voice/voice_pipeline';
+import {
+  getClosestActiveAlarm,
+  formatRemainingCountdown,
+  generateHeroAiNote,
+} from './hero_summary_helper';
 
 export const HomeScreen: React.FC = () => {
   const [orbState, setOrbState] = useState<VoiceOrbState>('idle');
@@ -37,6 +42,8 @@ export const HomeScreen: React.FC = () => {
   } = useReminderStore();
   const { toneStyle, ttsEnabled, loadSettings } = useSettingsStore();
 
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
   useEffect(() => {
     loadAlarms();
     loadReminders();
@@ -45,17 +52,35 @@ export const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void loadReminders();
+      if (state === 'active') {
+        setCurrentTime(new Date());
+        void loadReminders();
+      }
     });
-    const refreshTimer = setInterval(() => void loadReminders(), 60_000);
+    const refreshTimer = setInterval(() => {
+      setCurrentTime(new Date());
+      void loadReminders();
+    }, 30_000);
     return () => {
       appStateSubscription.remove();
       clearInterval(refreshTimer);
     };
   }, [loadReminders]);
 
-  const activeAlarms = alarms.filter((a) => a.isActive);
-  const nextAlarm = activeAlarms.length > 0 ? activeAlarms[0] : null;
+  const nextAlarmInfo = getClosestActiveAlarm(alarms, currentTime);
+  const nextAlarm = nextAlarmInfo?.alarm ?? null;
+  const nextReminder = upcomingReminders.length > 0 ? upcomingReminders[0] : null;
+
+  const heroRemainingText = nextAlarmInfo
+    ? formatRemainingCountdown(nextAlarmInfo.remainingMs)
+    : 'Chưa có báo thức nào';
+
+  const heroAiNote = generateHeroAiNote({
+    nextAlarmInfo,
+    nextReminder,
+    toneStyle,
+    now: currentTime,
+  });
 
   const handleOrbPress = async () => {
     let requestId = requestSequence.current;
@@ -262,7 +287,7 @@ export const HomeScreen: React.FC = () => {
           <View style={styles.heroHeaderTextWrapper}>
             <Text style={styles.heroCardTag}>BÁO THỨC KẾ TIẾP</Text>
             <Text style={styles.heroCardRemaining}>
-              {nextAlarm ? 'Đang kích hoạt' : 'Chưa có báo thức nào'}
+              {heroRemainingText}
             </Text>
           </View>
         </View>
@@ -274,7 +299,7 @@ export const HomeScreen: React.FC = () => {
 
         <View style={styles.heroFooter}>
           <Text style={styles.heroAiNote}>
-            ✨ Dự báo: 26°C, trời mát. Lịch họp lúc 09:00.
+            {heroAiNote}
           </Text>
         </View>
       </View>

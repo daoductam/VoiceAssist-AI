@@ -1,9 +1,12 @@
 import { ToneStyle } from '@domain/enums';
 import { sttService } from './stt_service';
 import { ttsService } from './tts_service';
-import { groqClient } from '@features/ai/groq/groq_client';
+import { groqClient, UserContextSnapshot } from '@features/ai/groq/groq_client';
 import { ruleBasedParser } from '@features/ai/nlu/rule_based_parser';
 import { actionRouter, ActionRouteOutput } from './action_router';
+import { alarmService } from '@domain/services/alarm_service';
+import { reminderService } from '@domain/services/reminder_service';
+import { todoService } from '@domain/services/todo_service';
 
 export interface VoiceResult extends ActionRouteOutput {
   transcription: string;
@@ -133,56 +136,159 @@ export class VoicePipeline {
         return { transcription, ...compoundResult };
       }
 
-      // 2. Intent Parsing (Online Groq LLM with Offline Rule Fallback)
+      // 2. Intent Routing: Hybrid Fast-Path & Context-Aware Smart-Path
       let routeResult: ActionRouteOutput;
 
-      try {
-        // Attempt Groq LLM Function Calling first
-        const llmResult = await groqClient.parseIntentWithLlm(transcription, signal);
-        this.throwIfAborted(signal);
+      const offlineParsed = ruleBasedParser.parse(transcription);
+      const isFastPath =
+        offlineParsed.confidence >= 0.9 &&
+        ((offlineParsed.intent === 'setAlarm' && !!offlineParsed.entities.time) ||
+          offlineParsed.intent === 'cancelAlarm' ||
+          (offlineParsed.intent === 'setReminder' &&
+            !!offlineParsed.entities.title &&
+            !!offlineParsed.entities.targetDate) ||
+          (offlineParsed.intent === 'addTodo' &&
+            !!offlineParsed.entities.title) ||
+          (offlineParsed.intent === 'completeTodo' &&
+            !!offlineParsed.entities.title));
 
-        if (llmResult.toolName === 'set_alarm') {
-          routeResult = await actionRouter.route({ userInput: transcription, intent: 'setAlarm', entities: llmResult.parameters, tone, signal });
-        } else if (llmResult.toolName === 'set_reminder') {
-          routeResult = await actionRouter.route({ userInput: transcription, intent: 'setReminder', entities: llmResult.parameters, tone, signal });
-        } else if (llmResult.toolName === 'add_todo') {
-          routeResult = await actionRouter.route({ userInput: transcription, intent: 'addTodo', entities: llmResult.parameters, tone, signal });
-        } else if (llmResult.toolName === 'edit_todo') {
-          routeResult = await actionRouter.route({ userInput: transcription, intent: 'editTodo', entities: llmResult.parameters, tone, signal });
-        } else if (llmResult.toolName === 'query_schedule') {
-          routeResult = await actionRouter.route({ userInput: transcription, intent: 'querySchedule', entities: llmResult.parameters, tone, signal });
-        } else if (llmResult.message && llmResult.message.trim().length > 0) {
+      if (isFastPath) {
+        // FAST-PATH: Instant local execution (10-20ms)
+        routeResult = await actionRouter.route({
+          userInput: transcription,
+          intent: offlineParsed.intent,
+          entities: offlineParsed.entities,
+          tone,
+          isOffline: false,
+          signal,
+        });
+      } else {
+        // SMART-PATH: Online Groq LLM with Context-Aware Function Calling
+        try {
+          let contextSnapshot: UserContextSnapshot | undefined;
+          try {
+            const [alarms, reminders, todos] = await Promise.all([
+              alarmService.getAll(),
+              reminderService.getUpcoming(1),
+              todoService.getAll(),
+            ]);
+            const activeAlarms = alarms.filter((a) => a.isActive);
+            const closestAlarm =
+              activeAlarms.length > 0 ? activeAlarms[0] : null;
+            const pendingTodos = todos.filter((t) => !t.isDone);
+            const nextRem = reminders.length > 0 ? reminders[0] : null;
+
+            contextSnapshot = {
+              nextAlarmTime: closestAlarm?.time ?? null,
+              nextAlarmLabel: closestAlarm?.label ?? null,
+              activeAlarmCount: activeAlarms.length,
+              pendingTodoCount: pendingTodos.length,
+              nextReminderTitle: nextRem?.title ?? null,
+              nextReminderTime: nextRem
+                ? new Date(nextRem.remindAt).toLocaleTimeString('vi-VN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : null,
+              toneStyle: tone,
+            };
+          } catch {
+            // Ignore context fetching errors
+          }
+
+          const llmResult = await groqClient.parseIntentWithLlm(
+            transcription,
+            contextSnapshot,
+            signal
+          );
+          this.throwIfAborted(signal);
+
+          if (llmResult.toolName === 'set_alarm') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'setAlarm',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.toolName === 'cancel_alarm') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'cancelAlarm',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.toolName === 'set_reminder') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'setReminder',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.toolName === 'add_todo') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'addTodo',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.toolName === 'complete_todo') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'completeTodo',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.toolName === 'edit_todo') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'editTodo',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.toolName === 'query_schedule') {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'querySchedule',
+              entities: llmResult.parameters,
+              tone,
+              signal,
+            });
+          } else if (llmResult.message && llmResult.message.trim().length > 0) {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: 'generalQa',
+              entities: {},
+              tone,
+              llmMessage: llmResult.message,
+              signal,
+            });
+          } else {
+            routeResult = await actionRouter.route({
+              userInput: transcription,
+              intent: offlineParsed.intent,
+              entities: offlineParsed.entities,
+              tone,
+              isOffline: true,
+              signal,
+            });
+          }
+        } catch (error) {
+          if (signal.aborted) throw error;
           routeResult = await actionRouter.route({
             userInput: transcription,
-            intent: 'generalQa',
-            entities: {},
-            tone,
-            llmMessage: llmResult.message,
-            signal,
-          });
-        } else {
-          const offlineIntent = ruleBasedParser.parse(transcription);
-          routeResult = await actionRouter.route({
-            userInput: transcription,
-            intent: offlineIntent.intent,
-            entities: offlineIntent.entities,
+            intent: offlineParsed.intent,
+            entities: offlineParsed.entities,
             tone,
             isOffline: true,
             signal,
           });
         }
-      } catch (error) {
-        if (signal.aborted) throw error;
-        // On network failure or API error, seamlessly use offline rule parser
-        const offlineIntent = ruleBasedParser.parse(transcription);
-        routeResult = await actionRouter.route({
-          userInput: transcription,
-          intent: offlineIntent.intent,
-          entities: offlineIntent.entities,
-          tone,
-          isOffline: true,
-          signal,
-        });
       }
 
       this.throwIfAborted(signal);

@@ -61,16 +61,34 @@ export class AlarmService {
     return newAlarm;
   }
 
-  async update(id: string, params: { time: string; label?: string }): Promise<Alarm> {
-    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(params.time)) {
+  async update(
+    id: string,
+    params: {
+      time?: string;
+      label?: string;
+      repeatDays?: number[];
+      vibrate?: boolean;
+      ringtoneUri?: string;
+    }
+  ): Promise<Alarm> {
+    const alarm = await this.getById(id);
+
+    const time = params.time ?? alarm.time;
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
       throw new ValidationException(
         'Giờ báo thức không hợp lệ. Vui lòng dùng định dạng HH:mm.'
       );
     }
 
-    const alarm = await this.getById(id);
-    if (alarm.repeatDays.length === 0) {
-      const [hour, minute] = params.time.split(':').map(Number);
+    const repeatDays =
+      params.repeatDays !== undefined ? params.repeatDays : alarm.repeatDays;
+
+    if (repeatDays.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
+      throw new ValidationException('Ngày lặp lại không hợp lệ.');
+    }
+
+    if (repeatDays.length === 0 && params.time !== undefined) {
+      const [hour, minute] = time.split(':').map(Number);
       const target = new Date();
       target.setHours(hour, minute, 0, 0);
       if (target.getTime() <= Date.now() + 5000) {
@@ -82,8 +100,17 @@ export class AlarmService {
 
     const updatedAlarm: Alarm = {
       ...alarm,
-      time: params.time,
-      label: params.label?.trim() || alarm.label,
+      time,
+      label:
+        params.label !== undefined
+          ? params.label.trim() || alarm.label
+          : alarm.label,
+      repeatDays,
+      vibrate: params.vibrate !== undefined ? params.vibrate : alarm.vibrate,
+      ringtoneUri:
+        params.ringtoneUri !== undefined
+          ? params.ringtoneUri
+          : alarm.ringtoneUri,
       updatedAt: new Date().toISOString(),
       syncStatus: 'pending',
     };

@@ -1,7 +1,9 @@
 export type IntentType =
   | 'setAlarm'
+  | 'cancelAlarm'
   | 'setReminder'
   | 'addTodo'
+  | 'completeTodo'
   | 'editTodo'
   | 'querySchedule'
   | 'generalQa'

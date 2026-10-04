@@ -40,6 +40,7 @@ export const AlarmListScreen: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [inputTime, setInputTime] = useState<string>('');
   const [inputLabel, setInputLabel] = useState<string>('Báo thức');
+  const [inputRepeatDays, setInputRepeatDays] = useState<number[]>([]);
   const [editingAlarmId, setEditingAlarmId] = useState<string | null>(null);
   const [testCountdown, setTestCountdown] = useState<number | null>(null);
 
@@ -161,8 +162,9 @@ export const AlarmListScreen: React.FC = () => {
 
   const handleOpenAddModal = () => {
     const now = new Date();
+    setEditingAlarmId(null);
+    setInputRepeatDays([]);
     if (subTab === 'alarms') {
-      setEditingAlarmId(null);
       const d = new Date(now.getTime() + 2 * 60 * 1000);
       setInputTime(
         `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -184,6 +186,7 @@ export const AlarmListScreen: React.FC = () => {
     setEditingAlarmId(alarm.id);
     setInputTime(alarm.time);
     setInputLabel(alarm.label);
+    setInputRepeatDays(alarm.repeatDays || []);
     setSubTab('alarms');
     setShowAddModal(true);
   };
@@ -191,6 +194,22 @@ export const AlarmListScreen: React.FC = () => {
   const handleCloseAddModal = () => {
     setShowAddModal(false);
     setEditingAlarmId(null);
+    setInputRepeatDays([]);
+  };
+
+  const handleToggleAlarmDay = async (
+    alarm: (typeof alarms)[number],
+    dayIndex: number
+  ) => {
+    const currentDays = alarm.repeatDays || [];
+    const newDays = currentDays.includes(dayIndex)
+      ? currentDays.filter((d) => d !== dayIndex)
+      : [...currentDays, dayIndex].sort((a, b) => a - b);
+    try {
+      await updateAlarm(alarm.id, { repeatDays: newDays });
+    } catch (error) {
+      Alert.alert('Không cập nhật được ngày lặp', (error as Error).message);
+    }
   };
 
   const handleSaveAlarm = async () => {
@@ -206,14 +225,11 @@ export const AlarmListScreen: React.FC = () => {
     const [hour, minute] = inputTime.split(':').map(Number);
     const alarmTime = new Date();
     alarmTime.setHours(hour, minute, 0, 0);
-    const editingAlarm = editingAlarmId
-      ? alarms.find((alarm) => alarm.id === editingAlarmId)
-      : undefined;
-    const isRepeatingAlarm = (editingAlarm?.repeatDays.length ?? 0) > 0;
-    if (!isRepeatingAlarm && alarmTime.getTime() <= Date.now() + 5000) {
+    const isRepeating = inputRepeatDays.length > 0;
+    if (!isRepeating && alarmTime.getTime() <= Date.now() + 5000) {
       Alert.alert(
         'Thời gian không hợp lệ',
-        'Thời gian báo thức đã qua. Vui lòng chọn thời gian khác.'
+        'Thời gian báo thức đã qua. Vui lòng chọn thời gian khác hoặc chọn ngày lặp.'
       );
       return;
     }
@@ -222,6 +238,7 @@ export const AlarmListScreen: React.FC = () => {
       const params = {
         time: inputTime,
         label: inputLabel.trim() || 'Báo thức',
+        repeatDays: inputRepeatDays,
       };
       if (editingAlarmId) {
         await updateAlarm(editingAlarmId, params);
@@ -549,12 +566,16 @@ export const AlarmListScreen: React.FC = () => {
                         {DAY_LABELS_VN.map((dayLabel, dayIndex) => {
                           const isSelected = alarm.repeatDays.includes(dayIndex);
                           return (
-                            <View
+                            <TouchableOpacity
                               key={dayLabel}
                               style={[
                                 styles.dayPill,
                                 isSelected && styles.dayPillSelected,
                               ]}
+                              onPress={() => handleToggleAlarmDay(alarm, dayIndex)}
+                              activeOpacity={0.7}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Bật tắt lặp ngày ${dayLabel}`}
                             >
                               <Text
                                 style={[
@@ -564,7 +585,7 @@ export const AlarmListScreen: React.FC = () => {
                               >
                                 {dayLabel}
                               </Text>
-                            </View>
+                            </TouchableOpacity>
                           );
                         })}
                       </View>
@@ -804,6 +825,121 @@ export const AlarmListScreen: React.FC = () => {
                   placeholder="Báo thức sáng"
                   placeholderTextColor={Colors.textMuted}
                 />
+
+                <Text style={styles.inputLabel}>Lặp lại các ngày</Text>
+                <View style={styles.modalDaysRow}>
+                  {DAY_LABELS_VN.map((dayLabel, dayIndex) => {
+                    const isSelected = inputRepeatDays.includes(dayIndex);
+                    return (
+                      <TouchableOpacity
+                        key={dayLabel}
+                        style={[
+                          styles.modalDayBtn,
+                          isSelected && styles.modalDayBtnSelected,
+                        ]}
+                        onPress={() => {
+                          setInputRepeatDays((prev) =>
+                            prev.includes(dayIndex)
+                              ? prev.filter((d) => d !== dayIndex)
+                              : [...prev, dayIndex].sort((a, b) => a - b)
+                          );
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.modalDayBtnText,
+                            isSelected && styles.modalDayBtnTextSelected,
+                          ]}
+                        >
+                          {dayLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Preset Chips */}
+                <View style={styles.presetRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 0 && styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 0 &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      Một lần
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 5 &&
+                        [0, 1, 2, 3, 4].every((d) =>
+                          inputRepeatDays.includes(d)
+                        ) &&
+                        styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([0, 1, 2, 3, 4])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 5 &&
+                          [0, 1, 2, 3, 4].every((d) =>
+                            inputRepeatDays.includes(d)
+                          ) &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      T2 - T6
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 2 &&
+                        [5, 6].every((d) => inputRepeatDays.includes(d)) &&
+                        styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([5, 6])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 2 &&
+                          [5, 6].every((d) => inputRepeatDays.includes(d)) &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      Cuối tuần
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 7 && styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([0, 1, 2, 3, 4, 5, 6])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 7 &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      Hàng ngày
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
                 <View style={styles.modalButtons}>
                   <TouchableOpacity
@@ -1249,6 +1385,60 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     ...Typography.labelMedium,
     color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  modalDaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalDayBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalDayBtnSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  modalDayBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
+  modalDayBtnTextSelected: {
+    color: '#FFFFFF',
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  presetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  presetChipActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.18)',
+    borderColor: Colors.primary,
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  presetChipTextActive: {
+    color: Colors.primary,
     fontWeight: '700',
   },
 });

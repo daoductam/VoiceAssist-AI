@@ -1,4 +1,4 @@
-import { ToneStyle } from '@domain/enums';
+import { IntentType, ToneStyle } from '@domain/enums';
 import { alarmService } from '@domain/services/alarm_service';
 import { reminderService } from '@domain/services/reminder_service';
 import { todoService } from '@domain/services/todo_service';
@@ -11,7 +11,7 @@ import { useTodoStore } from '@shared/stores/useTodoStore';
 
 export interface ActionRouteInput {
   userInput: string;
-  intent: 'setAlarm' | 'setReminder' | 'addTodo' | 'editTodo' | 'querySchedule' | 'generalQa' | 'unknown';
+  intent: IntentType | 'multiAction';
   entities: Record<string, string>;
   tone: ToneStyle;
   isOffline?: boolean;
@@ -40,9 +40,30 @@ export class ActionRouter {
             new Date(),
             { rollPastTimeToTomorrow: false }
           );
-          if (parsedTime && parsedTime.getTime() <= Date.now()) {
+          let repeatDays: number[] = [];
+          if (input.entities.repeatDays) {
+            const val = input.entities.repeatDays.toLowerCase().trim();
+            if (val === 'daily') repeatDays = [0, 1, 2, 3, 4, 5, 6];
+            else if (val === 'weekdays') repeatDays = [0, 1, 2, 3, 4];
+            else if (val === 'weekends') repeatDays = [5, 6];
+            else {
+              repeatDays = val
+                .split(',')
+                .map((n) => parseInt(n.trim(), 10))
+                .filter((n) => !isNaN(n) && n >= 0 && n <= 6);
+            }
+          }
+          if (repeatDays.length === 0) {
+            repeatDays = vietnameseTimeParser.parseRepeatDays(input.userInput);
+          }
+
+          if (
+            repeatDays.length === 0 &&
+            parsedTime &&
+            parsedTime.getTime() <= Date.now()
+          ) {
             throw new ValidationException(
-              'Thời gian báo thức đã qua. Vui lòng chọn thời gian khác.'
+              'Thời gian báo thức đã qua. Vui lòng chọn thời gian khác hoặc đặt lặp lại.'
             );
           }
 
@@ -56,9 +77,14 @@ export class ActionRouter {
             time = '07:00';
           }
 
-          const label = input.entities.label || input.entities.title || 'Báo thức';
+          const label =
+            input.entities.label || input.entities.title || 'Báo thức';
           this.throwIfAborted(input.signal);
-          const newAlarm = await alarmService.create({ time, label });
+          const newAlarm = await alarmService.create({
+            time,
+            label,
+            repeatDays,
+          });
 
           responseText = responseGenerator.generate({
             tone: input.tone,
@@ -69,6 +95,29 @@ export class ActionRouter {
 
           //await notificationService.scheduleAlarm(newAlarm, responseText);
           actionTaken = true;
+          break;
+        }
+
+        case 'cancelAlarm': {
+          this.throwIfAborted(input.signal);
+          const alarms = await alarmService.getAll();
+          const targetTime = input.entities.time;
+          let alarmToCancel = null;
+          if (targetTime) {
+            alarmToCancel = alarms.find((a) => a.time === targetTime && a.isActive);
+          }
+          if (!alarmToCancel) {
+            alarmToCancel = alarms.find((a) => a.isActive);
+          }
+
+          if (alarmToCancel) {
+            await alarmService.delete(alarmToCancel.id);
+            responseText = `Đã hủy báo thức ${alarmToCancel.time} (${alarmToCancel.label}) cho bạn rồi nhé.`;
+            actionTaken = true;
+          } else {
+            responseText = 'Hiện tại bạn không có báo thức nào đang bật để hủy.';
+            actionTaken = false;
+          }
           break;
         }
 
@@ -114,6 +163,30 @@ export class ActionRouter {
             eventTitle: newTodo.title,
           });
           actionTaken = true;
+          break;
+        }
+
+        case 'completeTodo': {
+          this.throwIfAborted(input.signal);
+          const targetTitle = (input.entities.title || input.entities.task || '').trim().toLowerCase();
+          const todos = await todoService.getAll();
+          const pending = todos.filter((t) => !t.isDone);
+          let matched = null;
+          if (targetTitle) {
+            matched = pending.find((t) => t.title.toLowerCase().includes(targetTitle));
+          }
+          if (!matched && pending.length > 0) {
+            matched = pending[0];
+          }
+
+          if (matched) {
+            await todoService.toggle(matched.id, true);
+            responseText = `Tuyệt vời! Đã đánh dấu hoàn thành công việc: "${matched.title}".`;
+            actionTaken = true;
+          } else {
+            responseText = 'Không tìm thấy công việc phù hợp để hoàn thành.';
+            actionTaken = false;
+          }
           break;
         }
 

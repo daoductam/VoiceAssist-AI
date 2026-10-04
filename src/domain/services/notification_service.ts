@@ -166,20 +166,23 @@ export class NotificationService {
     let trigger: Notifications.NotificationTriggerInput;
 
     if (alarm.repeatDays && alarm.repeatDays.length > 0) {
-      // Recurring daily calendar trigger
-      trigger = {
-        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-        hour,
-        minute,
-        repeats: true,
-        channelId: 'alarms_channel',
-      };
-
-      primaryId = await Notifications.scheduleNotificationAsync({
-        identifier: alarm.id,
-        content,
-        trigger,
-      });
+      // Recurring alarm: schedule notification for each selected weekday
+      for (const day of alarm.repeatDays) {
+        // Map 0=Mon..6=Sun to Expo weekday: 1=Sun, 2=Mon..7=Sat
+        const expoWeekday = day === 6 ? 1 : day + 2;
+        await Notifications.scheduleNotificationAsync({
+          identifier: `${alarm.id}_day_${day}`,
+          content,
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+            weekday: expoWeekday,
+            hour,
+            minute,
+            repeats: true,
+            channelId: 'alarms_channel',
+          },
+        });
+      }
     } else {
       // One-time alarm: compute exact Date target
       const now = new Date();
@@ -393,6 +396,9 @@ export class NotificationService {
       await Notifications.cancelScheduledNotificationAsync(identifier);
       for (let i = 0; i < 5; i++) {
         await Notifications.cancelScheduledNotificationAsync(`${identifier}_burst_${i}`);
+      }
+      for (let d = 0; d < 7; d++) {
+        await Notifications.cancelScheduledNotificationAsync(`${identifier}_day_${d}`);
       }
     } catch {
       // Ignore if doesn't exist

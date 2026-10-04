@@ -38,7 +38,16 @@ interface AlarmStoreState {
     vibrate?: boolean;
     ringtoneUri?: string;
   }) => Promise<Alarm>;
-  updateAlarm: (id: string, params: { time: string; label?: string }) => Promise<Alarm>;
+  updateAlarm: (
+    id: string,
+    params: {
+      time?: string;
+      label?: string;
+      repeatDays?: number[];
+      vibrate?: boolean;
+      ringtoneUri?: string;
+    }
+  ) => Promise<Alarm>;
   toggleAlarm: (id: string, isActive: boolean) => Promise<void>;
   deleteAlarm: (id: string) => Promise<void>;
 }
