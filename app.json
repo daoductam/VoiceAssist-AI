@@ -46,6 +46,7 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-audio",
+      "expo-notifications",
       "./plugins/withAndroidAlarm"
     ],
     "extra": {

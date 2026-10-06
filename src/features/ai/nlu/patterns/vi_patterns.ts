@@ -7,6 +7,15 @@ export interface IntentPatternDefinition {
 }
 
 export const VIETNAMESE_INTENT_PATTERNS: IntentPatternDefinition[] = [
+  // 0. Cancel Alarm (higher priority than setAlarm to catch "hủy báo thức")
+  {
+    intent: 'cancelAlarm',
+    priority: 105,
+    triggers: [
+      /(?:hủy|tắt|xóa|dừng|bỏ)\s*(?:báo thức|chuông báo|chuông)/i,
+    ],
+  },
+
   // 1. Set Alarm
   {
     intent: 'setAlarm',
@@ -29,7 +38,25 @@ export const VIETNAMESE_INTENT_PATTERNS: IntentPatternDefinition[] = [
     ],
   },
 
-  // 3. Add Todo
+  // 3. Edit Todo
+  {
+    intent: 'editTodo',
+    priority: 85,
+    triggers: [
+      /(?:đổi|sửa|chỉnh sửa|cập nhật)\s+(?:việc|công việc|task|todo|to-do)(?=\s|$|[,!.?])/i,
+    ],
+  },
+
+  // 3.5 Complete Todo
+  {
+    intent: 'completeTodo',
+    priority: 82,
+    triggers: [
+      /(?:hoàn thành|làm xong|đã làm xong|đã xong|check xong|tích xong)\s+(?:việc|công việc|task|todo)?/i,
+    ],
+  },
+
+  // 4. Add Todo
   {
     intent: 'addTodo',
     priority: 80,
@@ -40,7 +67,7 @@ export const VIETNAMESE_INTENT_PATTERNS: IntentPatternDefinition[] = [
     ],
   },
 
-  // 4. Query Schedule
+  // 5. Query Schedule
   {
     intent: 'querySchedule',
     priority: 70,
@@ -51,7 +78,7 @@ export const VIETNAMESE_INTENT_PATTERNS: IntentPatternDefinition[] = [
     ],
   },
 
-  // 5. General Q&A
+  // 6. General Q&A
   {
     intent: 'generalQa',
     priority: 50,

@@ -19,6 +19,7 @@ import {
   Clock,
   CheckCircle2,
   Trash2,
+  Pencil,
   Sparkles,
   Play,
   Volume2,
@@ -39,6 +40,8 @@ export const AlarmListScreen: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [inputTime, setInputTime] = useState<string>('');
   const [inputLabel, setInputLabel] = useState<string>('Báo thức');
+  const [inputRepeatDays, setInputRepeatDays] = useState<number[]>([]);
+  const [editingAlarmId, setEditingAlarmId] = useState<string | null>(null);
   const [testCountdown, setTestCountdown] = useState<number | null>(null);
 
   // Reminder State
@@ -55,6 +58,7 @@ export const AlarmListScreen: React.FC = () => {
     toggleAlarm,
     deleteAlarm,
     createAlarm,
+    updateAlarm,
     openRingingAlarm,
   } = useAlarmStore();
   const {
@@ -158,6 +162,8 @@ export const AlarmListScreen: React.FC = () => {
 
   const handleOpenAddModal = () => {
     const now = new Date();
+    setEditingAlarmId(null);
+    setInputRepeatDays([]);
     if (subTab === 'alarms') {
       const d = new Date(now.getTime() + 2 * 60 * 1000);
       setInputTime(
@@ -176,6 +182,36 @@ export const AlarmListScreen: React.FC = () => {
     setShowAddModal(true);
   };
 
+  const handleOpenEditAlarm = (alarm: (typeof alarms)[number]) => {
+    setEditingAlarmId(alarm.id);
+    setInputTime(alarm.time);
+    setInputLabel(alarm.label);
+    setInputRepeatDays(alarm.repeatDays || []);
+    setSubTab('alarms');
+    setShowAddModal(true);
+  };
+
+  const handleCloseAddModal = () => {
+    setShowAddModal(false);
+    setEditingAlarmId(null);
+    setInputRepeatDays([]);
+  };
+
+  const handleToggleAlarmDay = async (
+    alarm: (typeof alarms)[number],
+    dayIndex: number
+  ) => {
+    const currentDays = alarm.repeatDays || [];
+    const newDays = currentDays.includes(dayIndex)
+      ? currentDays.filter((d) => d !== dayIndex)
+      : [...currentDays, dayIndex].sort((a, b) => a - b);
+    try {
+      await updateAlarm(alarm.id, { repeatDays: newDays });
+    } catch (error) {
+      Alert.alert('Không cập nhật được ngày lặp', (error as Error).message);
+    }
+  };
+
   const handleSaveAlarm = async () => {
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
     if (!timeRegex.test(inputTime)) {
@@ -186,13 +222,33 @@ export const AlarmListScreen: React.FC = () => {
       return;
     }
 
+    const [hour, minute] = inputTime.split(':').map(Number);
+    const alarmTime = new Date();
+    alarmTime.setHours(hour, minute, 0, 0);
+    const isRepeating = inputRepeatDays.length > 0;
+    if (!isRepeating && alarmTime.getTime() <= Date.now() + 5000) {
+      Alert.alert(
+        'Thời gian không hợp lệ',
+        'Thời gian báo thức đã qua. Vui lòng chọn thời gian khác hoặc chọn ngày lặp.'
+      );
+      return;
+    }
+
     try {
-      await createAlarm({
+      const params = {
         time: inputTime,
         label: inputLabel.trim() || 'Báo thức',
-      });
-      setShowAddModal(false);
-      Alert.alert('Thành công 🎉', `Đã đặt báo thức lúc ${inputTime}!`);
+        repeatDays: inputRepeatDays,
+      };
+      if (editingAlarmId) {
+        await updateAlarm(editingAlarmId, params);
+        handleCloseAddModal();
+        Alert.alert('Đã cập nhật', `Báo thức đã được lưu lúc ${inputTime}.`);
+      } else {
+        await createAlarm(params);
+        handleCloseAddModal();
+        Alert.alert('Thành công 🎉', `Đã đặt báo thức lúc ${inputTime}!`);
+      }
     } catch (e) {
       if (e instanceof AlarmPermissionError) return;
       Alert.alert('Lỗi', 'Không thể tạo báo thức: ' + (e as Error).message);
@@ -288,6 +344,13 @@ export const AlarmListScreen: React.FC = () => {
       },
     ]);
   };
+
+  const alarmGroups = new Map<string, typeof alarms>();
+  alarms.forEach((alarm) => {
+    const group = alarmGroups.get(alarm.time) ?? [];
+    group.push(alarm);
+    alarmGroups.set(alarm.time, group);
+  });
 
   return (
     <View style={styles.container}>
@@ -439,71 +502,95 @@ export const AlarmListScreen: React.FC = () => {
                 </Text>
               </View>
             ) : (
-              alarms.map((alarm) => (
-                <View key={alarm.id} style={styles.alarmCard}>
-                  <View style={styles.alarmHeader}>
-                    <View>
-                      <Text
-                        style={[
-                          styles.alarmTime,
-                          !alarm.isActive && styles.alarmTimeInactive,
-                        ]}
-                      >
-                        {alarm.time}
+              Array.from(alarmGroups.entries()).map(([time, groupedAlarms]) => (
+                <View key={time} style={styles.alarmCard}>
+                  <View style={styles.alarmGroupHeader}>
+                    <Text style={styles.alarmTime}>{time}</Text>
+                    {groupedAlarms.length > 1 && (
+                      <Text style={styles.alarmGroupCount}>
+                        {groupedAlarms.length} báo thức
                       </Text>
-                      <Text style={styles.alarmLabel}>{alarm.label}</Text>
-                    </View>
-                    <View style={styles.alarmActions}>
-                      <TouchableOpacity
-                        style={styles.deleteBtn}
-                        onPress={() => handleDeleteAlarm(alarm.id, alarm.time)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Trash2 size={18} color={Colors.textMuted} />
-                      </TouchableOpacity>
-                      <Switch
-                        value={alarm.isActive}
-                        onValueChange={() =>
-                          toggleAlarm(alarm.id, !alarm.isActive).catch(error => {
-                            if (error instanceof AlarmPermissionError) return;
-                            Alert.alert('Không đổi được báo thức', (error as Error).message);
-                          })
-                        }
-                        trackColor={{
-                          false: Colors.border,
-                          true: Colors.primary,
-                        }}
-                        thumbColor={
-                          alarm.isActive ? '#FFFFFF' : Colors.textMuted
-                        }
-                      />
-                    </View>
+                    )}
                   </View>
 
-                  {/* Repeat Days Pills */}
-                  <View style={styles.repeatDaysRow}>
-                    {DAY_LABELS_VN.map((dayLabel, index) => {
-                      const isSelected = alarm.repeatDays.includes(index);
-                      return (
-                        <View
-                          key={dayLabel}
+                  {groupedAlarms.map((alarm, index) => (
+                    <View
+                      key={alarm.id}
+                      style={index > 0 ? styles.alarmGroupMemberSeparated : styles.alarmGroupMember}
+                    >
+                      <View style={styles.alarmHeader}>
+                        <Text
                           style={[
-                            styles.dayPill,
-                            isSelected && styles.dayPillSelected,
+                            styles.alarmLabel,
+                            !alarm.isActive && styles.alarmLabelInactive,
                           ]}
                         >
-                          <Text
-                            style={[
-                              styles.dayPillText,
-                              isSelected && styles.dayPillTextSelected,
-                            ]}
+                          {alarm.label}
+                        </Text>
+                        <View style={styles.alarmActions}>
+                          <TouchableOpacity
+                            style={styles.deleteBtn}
+                            onPress={() => handleOpenEditAlarm(alarm)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            accessibilityLabel="Sửa báo thức"
                           >
-                            {dayLabel}
-                          </Text>
+                            <Pencil size={18} color={Colors.textMuted} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.deleteBtn}
+                            onPress={() => handleDeleteAlarm(alarm.id, alarm.time)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Trash2 size={18} color={Colors.textMuted} />
+                          </TouchableOpacity>
+                          <Switch
+                            value={alarm.isActive}
+                            onValueChange={() =>
+                              toggleAlarm(alarm.id, !alarm.isActive).catch(error => {
+                                if (error instanceof AlarmPermissionError) return;
+                                Alert.alert('Không đổi được báo thức', (error as Error).message);
+                              })
+                            }
+                            trackColor={{
+                              false: Colors.border,
+                              true: Colors.primary,
+                            }}
+                            thumbColor={
+                              alarm.isActive ? '#FFFFFF' : Colors.textMuted
+                            }
+                          />
                         </View>
-                      );
-                    })}
-                  </View>
+                      </View>
+
+                      <View style={styles.repeatDaysRow}>
+                        {DAY_LABELS_VN.map((dayLabel, dayIndex) => {
+                          const isSelected = alarm.repeatDays.includes(dayIndex);
+                          return (
+                            <TouchableOpacity
+                              key={dayLabel}
+                              style={[
+                                styles.dayPill,
+                                isSelected && styles.dayPillSelected,
+                              ]}
+                              onPress={() => handleToggleAlarmDay(alarm, dayIndex)}
+                              activeOpacity={0.7}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Bật tắt lặp ngày ${dayLabel}`}
+                            >
+                              <Text
+                                style={[
+                                  styles.dayPillText,
+                                  isSelected && styles.dayPillTextSelected,
+                                ]}
+                              >
+                                {dayLabel}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ))}
                 </View>
               ))
             )}
@@ -638,6 +725,16 @@ export const AlarmListScreen: React.FC = () => {
                 <Text style={styles.emptySub}>
                   Hãy thử nói: "Thêm vào danh sách mua rau củ hôm nay" hoặc bấm nút (+) bên dưới.
                 </Text>
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={handleOpenAddModal}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Thêm công việc cần làm"
+                >
+                  <Plus size={16} color="#FFFFFF" />
+                  <Text style={styles.emptyActionText}>Thêm công việc</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               todos.map((todo) => (
@@ -681,6 +778,14 @@ export const AlarmListScreen: React.FC = () => {
         style={styles.fab}
         activeOpacity={0.85}
         onPress={handleOpenAddModal}
+        accessibilityRole="button"
+        accessibilityLabel={
+          subTab === 'todos'
+            ? 'Thêm công việc cần làm'
+            : subTab === 'reminders'
+            ? 'Thêm lời nhắc'
+            : 'Thêm báo thức'
+        }
       >
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
@@ -690,14 +795,16 @@ export const AlarmListScreen: React.FC = () => {
         visible={showAddModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowAddModal(false)}
+        onRequestClose={handleCloseAddModal}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             {/* Form for Alarms */}
             {subTab === 'alarms' && (
               <>
-                <Text style={styles.modalTitle}>⏰ Thêm báo thức mới</Text>
+                <Text style={styles.modalTitle}>
+                  {editingAlarmId ? '⏰ Sửa báo thức' : '⏰ Thêm báo thức mới'}
+                </Text>
 
                 <Text style={styles.inputLabel}>Giờ báo thức (HH:mm)</Text>
                 <TextInput
@@ -719,10 +826,125 @@ export const AlarmListScreen: React.FC = () => {
                   placeholderTextColor={Colors.textMuted}
                 />
 
+                <Text style={styles.inputLabel}>Lặp lại các ngày</Text>
+                <View style={styles.modalDaysRow}>
+                  {DAY_LABELS_VN.map((dayLabel, dayIndex) => {
+                    const isSelected = inputRepeatDays.includes(dayIndex);
+                    return (
+                      <TouchableOpacity
+                        key={dayLabel}
+                        style={[
+                          styles.modalDayBtn,
+                          isSelected && styles.modalDayBtnSelected,
+                        ]}
+                        onPress={() => {
+                          setInputRepeatDays((prev) =>
+                            prev.includes(dayIndex)
+                              ? prev.filter((d) => d !== dayIndex)
+                              : [...prev, dayIndex].sort((a, b) => a - b)
+                          );
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.modalDayBtnText,
+                            isSelected && styles.modalDayBtnTextSelected,
+                          ]}
+                        >
+                          {dayLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Preset Chips */}
+                <View style={styles.presetRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 0 && styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 0 &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      Một lần
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 5 &&
+                        [0, 1, 2, 3, 4].every((d) =>
+                          inputRepeatDays.includes(d)
+                        ) &&
+                        styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([0, 1, 2, 3, 4])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 5 &&
+                          [0, 1, 2, 3, 4].every((d) =>
+                            inputRepeatDays.includes(d)
+                          ) &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      T2 - T6
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 2 &&
+                        [5, 6].every((d) => inputRepeatDays.includes(d)) &&
+                        styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([5, 6])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 2 &&
+                          [5, 6].every((d) => inputRepeatDays.includes(d)) &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      Cuối tuần
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      inputRepeatDays.length === 7 && styles.presetChipActive,
+                    ]}
+                    onPress={() => setInputRepeatDays([0, 1, 2, 3, 4, 5, 6])}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        inputRepeatDays.length === 7 &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      Hàng ngày
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 <View style={styles.modalButtons}>
                   <TouchableOpacity
                     style={styles.cancelBtn}
-                    onPress={() => setShowAddModal(false)}
+                    onPress={handleCloseAddModal}
                   >
                     <Text style={styles.cancelBtnText}>Hủy</Text>
                   </TouchableOpacity>
@@ -730,7 +952,9 @@ export const AlarmListScreen: React.FC = () => {
                     style={styles.confirmBtn}
                     onPress={handleSaveAlarm}
                   >
-                    <Text style={styles.confirmBtnText}>Lưu báo thức</Text>
+                    <Text style={styles.confirmBtnText}>
+                      {editingAlarmId ? 'Lưu thay đổi' : 'Lưu báo thức'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -947,6 +1171,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  alarmGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  alarmGroupCount: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+  },
+  alarmGroupMember: {
+    marginTop: 12,
+  },
+  alarmGroupMemberSeparated: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
   alarmHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -962,7 +1204,11 @@ const styles = StyleSheet.create({
   alarmLabel: {
     ...Typography.bodyMedium,
     color: Colors.textSecondary,
-    marginTop: 2,
+    flex: 1,
+    marginRight: 8,
+  },
+  alarmLabelInactive: {
+    color: Colors.textMuted,
   },
   alarmActions: {
     flexDirection: 'row',
@@ -1047,6 +1293,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
   },
+  emptyActionBtn: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 18,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: Colors.success,
+  },
+  emptyActionText: {
+    ...Typography.labelMedium,
+    color: '#FFFFFF',
+  },
   fab: {
     position: 'absolute',
     right: 20,
@@ -1124,6 +1385,60 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     ...Typography.labelMedium,
     color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  modalDaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalDayBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalDayBtnSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  modalDayBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
+  modalDayBtnTextSelected: {
+    color: '#FFFFFF',
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  presetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  presetChipActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.18)',
+    borderColor: Colors.primary,
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  presetChipTextActive: {
+    color: Colors.primary,
     fontWeight: '700',
   },
 });

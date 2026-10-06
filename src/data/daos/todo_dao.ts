@@ -61,6 +61,14 @@ export class TodoDao {
     );
   }
 
+  async updateTitle(id: string, title: string, updatedAt: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(
+      'UPDATE todos SET title = ?, updated_at = ?, sync_status = ? WHERE id = ?;',
+      [title, updatedAt, 'pending', id]
+    );
+  }
+
   async delete(id: string): Promise<void> {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM todos WHERE id = ?;', [id]);

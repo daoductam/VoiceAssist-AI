@@ -14,6 +14,27 @@ export interface IntentParser {
 }
 
 export class RuleBasedParser implements IntentParser {
+  parseMultiple(text: string): ParsedIntent[] {
+    const segments = text
+      .split(/\s+(?:và|rồi)\s+/i)
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (segments.length < 2) return [];
+
+    const parsed = segments.map((segment) => this.parse(segment));
+    const actionableIntents: IntentType[] = [
+      'setAlarm',
+      'cancelAlarm',
+      'setReminder',
+      'addTodo',
+      'completeTodo',
+      'editTodo',
+    ];
+    return parsed.every((item) => actionableIntents.includes(item.intent))
+      ? parsed
+      : [];
+  }
+
   parse(text: string): ParsedIntent {
     if (!text || text.trim().length === 0) {
       return {
@@ -46,16 +67,40 @@ export class RuleBasedParser implements IntentParser {
             entities.time = `${h}:${m}`;
           }
 
-          // Extract task/label by cleaning matched triggers & time phrases
-          const extractedTitle = this.extractContent(raw, patternDef.intent);
-          if (extractedTitle) {
-            entities.title = extractedTitle;
-            entities.task = extractedTitle;
+          if (patternDef.intent === 'editTodo') {
+            const edit = this.extractTodoEdit(raw);
+            if (edit.oldTitle) entities.oldTitle = edit.oldTitle;
+            if (edit.newTitle) entities.newTitle = edit.newTitle;
+          } else {
+            // Extract task/label by cleaning matched triggers & time phrases
+            const extractedTitle = this.extractContent(raw, patternDef.intent);
+            if (extractedTitle) {
+              entities.title = extractedTitle;
+              entities.task = extractedTitle;
+            }
+          }
+
+          let confidence = 0.85;
+          if (patternDef.intent === 'setAlarm') {
+            confidence = entities.time ? 0.95 : 0.7;
+          } else if (patternDef.intent === 'cancelAlarm') {
+            confidence = 0.92;
+          } else if (patternDef.intent === 'setReminder') {
+            confidence =
+              entities.title && (entities.targetDate || entities.time)
+                ? 0.95
+                : 0.75;
+          } else if (patternDef.intent === 'addTodo') {
+            confidence = entities.title ? 0.95 : 0.65;
+          } else if (patternDef.intent === 'completeTodo') {
+            confidence = entities.title ? 0.92 : 0.7;
+          } else if (patternDef.intent === 'querySchedule') {
+            confidence = 0.9;
           }
 
           return {
             intent: patternDef.intent,
-            confidence: 0.85,
+            confidence,
             entities,
             rawText: raw,
           };
@@ -96,6 +141,14 @@ export class RuleBasedParser implements IntentParser {
   private extractContent(text: string, intent: IntentType): string {
     let cleaned = text;
 
+    // Remove time and date details before stripping the command keywords.
+    cleaned = cleaned.replace(
+      /(?:lúc|vào|sau)\s+\d{1,2}(?:(?:[:h]\s*\d{1,2})|(?:\s*giờ(?:\s*\d{1,2})?))(?:\s*(?:phút|p|sáng|chiều|tối|đêm|trưa))?/gi,
+      ''
+    );
+    cleaned = cleaned.replace(/\b\d{1,2}\s*(?:phút|tiếng|giờ)\s*(?:nữa|sau)?/gi, '');
+    cleaned = cleaned.replace(/\b(?:sáng mai|ngày mai|tối nay|hôm nay)\b/gi, '');
+
     if (intent === 'setAlarm') {
       cleaned = cleaned.replace(
         /(?:đặt|bật|tạo|hẹn)?\s*(?:báo thức|chuông báo|chuông)\s*(?:lúc|vào)?/gi,
@@ -119,16 +172,25 @@ export class RuleBasedParser implements IntentParser {
       cleaned = cleaned.replace(/(?:nhớ mua|cần mua|cần làm)\s+/gi, '');
     }
 
-    // Strip time phrases from the title
-    cleaned = cleaned.replace(
-      /(?:lúc|vào|sau)\s+\d{1,2}(?:[:h]| giờ )\d{0,2}(?:\s*(?:phút|sáng|chiều|tối|đêm))?/gi,
-      ''
-    );
-    cleaned = cleaned.replace(/\b\d{1,2}\s*(?:phút|tiếng|giờ)\s*(?:nữa|sau)?/gi, '');
-    cleaned = cleaned.replace(/\b(?:sáng mai|ngày mai|tối nay|hôm nay)\b/gi, '');
-
     cleaned = cleaned.trim().replace(/^[-:,\s]+|[-:,\s]+$/g, '');
-    return cleaned.length > 0 ? cleaned : 'Nhắc nhở mới';
+    if (cleaned.length > 0) return cleaned;
+    return intent === 'setAlarm' ? '' : 'Nhắc nhở mới';
+  }
+
+  private extractTodoEdit(text: string): { oldTitle?: string; newTitle?: string } {
+    const match = text.match(
+      /(?:đổi|sửa|chỉnh sửa|cập nhật)\s+(?:(?:công\s+)?việc|task|todo|to-do)\s+(.+?)\s+(?:thành|sang)\s+(.+?)\s*[.!?]*$/i
+    );
+    if (!match) return {};
+
+    const cleanTitle = (title: string) =>
+      title.replace(/^[\s"'“”‘’]+|[\s"'“”‘’.,!?]+$/g, '').trim();
+    const oldTitle = cleanTitle(match[1]);
+    const newTitle = cleanTitle(match[2]);
+    return {
+      oldTitle: oldTitle || undefined,
+      newTitle: newTitle || undefined,
+    };
   }
 }
 

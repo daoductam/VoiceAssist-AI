@@ -11,7 +11,7 @@ interface SettingsStoreState {
   isKeyConfigured: boolean;
 
   loadSettings: () => Promise<void>;
-  setToneStyle: (tone: ToneStyle) => void;
+  setToneStyle: (tone: ToneStyle) => Promise<void>;
   setTtsEnabled: (enabled: boolean) => void;
   setTtsSpeed: (speed: number) => void;
   setGroqApiKey: (key: string) => Promise<void>;
@@ -25,25 +25,39 @@ export const useSettingsStore = create<SettingsStoreState>((set) => ({
   isKeyConfigured: false,
 
   loadSettings: async () => {
+    let storedKey: string | null = null;
+    let storedToneStyle: string | null = null;
     try {
-      const storedKey = await SecureStore.getItemAsync(
+      storedKey = await SecureStore.getItemAsync(
         APP_CONSTANTS.SECURE_STORE_KEY_GROQ
       );
-      const effectiveKey = storedKey || process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-      set({
-        groqApiKey: effectiveKey,
-        isKeyConfigured: effectiveKey.trim().length > 0,
-      });
     } catch {
-      const envKey = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-      set({
-        groqApiKey: envKey,
-        isKeyConfigured: envKey.trim().length > 0,
-      });
+      // Fall back to the configured environment key.
     }
+    try {
+      storedToneStyle = await SecureStore.getItemAsync(
+        APP_CONSTANTS.SECURE_STORE_KEY_TONE_STYLE
+      );
+    } catch {
+      // Keep the default tone if it cannot be read.
+    }
+
+    const effectiveKey = storedKey || process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+    const toneStyle: ToneStyle = storedToneStyle === 'friendly' ||
+      storedToneStyle === 'professional' || storedToneStyle === 'cute'
+      ? storedToneStyle
+      : 'cute';
+    set({
+      groqApiKey: effectiveKey,
+      isKeyConfigured: effectiveKey.trim().length > 0,
+      toneStyle,
+    });
   },
 
-  setToneStyle: (tone) => set({ toneStyle: tone }),
+  setToneStyle: async (tone) => {
+    await SecureStore.setItemAsync(APP_CONSTANTS.SECURE_STORE_KEY_TONE_STYLE, tone);
+    set({ toneStyle: tone });
+  },
   setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
   setTtsSpeed: (speed) => set({ ttsSpeed: speed }),
 
