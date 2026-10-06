@@ -9,23 +9,45 @@ export interface NextAlarmInfo {
 
 /**
  * Calculates the next trigger Date for a given alarm based on current time and repeatDays.
- * Alarm.repeatDays convention: 0 = Mon, 1 = Tue, ..., 6 = Sun
+ * Alarm.repeatDays convention: 0 = Mon, 1 = Tue, ..., 6 = Sun.
+ * Returns null if a one-time alarm has already passed its scheduled trigger date.
  */
-export function getNextAlarmTrigger(alarm: Alarm, now: Date = new Date()): Date {
+export function getNextAlarmTrigger(alarm: Alarm, now: Date = new Date()): Date | null {
   const parts = alarm.time.split(':');
   const hour = Number.parseInt(parts[0] || '0', 10);
   const minute = Number.parseInt(parts[1] || '0', 10);
 
-  const targetDate = new Date(now);
+  if (alarm.repeatDays && alarm.repeatDays.length > 0) {
+    const targetDate = new Date(now);
+    targetDate.setHours(hour, minute, 0, 0);
+
+    // If time has passed today or repeatDays doesn't match today's day of week
+    while (
+      targetDate.getTime() <= now.getTime() ||
+      !alarm.repeatDays.includes((targetDate.getDay() + 6) % 7)
+    ) {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
+
+    return targetDate;
+  }
+
+  // One-time alarm (repeatDays.length === 0):
+  // Calculate single target trigger date relative to activation timestamp (updatedAt / createdAt)
+  const baseDate = new Date(alarm.updatedAt || alarm.createdAt);
+  const validBase = !Number.isNaN(baseDate.getTime()) ? baseDate : now;
+
+  const targetDate = new Date(validBase);
   targetDate.setHours(hour, minute, 0, 0);
 
-  // If time has passed today or repeatDays doesn't match today's day of week
-  while (
-    targetDate.getTime() <= now.getTime() ||
-    (alarm.repeatDays.length > 0 &&
-      !alarm.repeatDays.includes((targetDate.getDay() + 6) % 7))
-  ) {
+  // If time was on or before activation time, it was scheduled for the next day
+  if (targetDate.getTime() <= validBase.getTime()) {
     targetDate.setDate(targetDate.getDate() + 1);
+  }
+
+  // If this single one-time target has already passed, it does NOT roll over to tomorrow!
+  if (targetDate.getTime() <= now.getTime()) {
+    return null;
   }
 
   return targetDate;
@@ -46,6 +68,7 @@ export function getClosestActiveAlarm(
   for (const alarm of activeAlarms) {
     try {
       const triggerDate = getNextAlarmTrigger(alarm, now);
+      if (!triggerDate) continue;
       const remainingMs = Math.max(0, triggerDate.getTime() - now.getTime());
       alarmsWithTrigger.push({ alarm, triggerDate, remainingMs });
     } catch {

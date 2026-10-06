@@ -49,6 +49,7 @@ interface AlarmStoreState {
     }
   ) => Promise<Alarm>;
   toggleAlarm: (id: string, isActive: boolean) => Promise<void>;
+  deactivateIfOneTime: (id: string) => Promise<boolean>;
   deleteAlarm: (id: string) => Promise<void>;
 }
 
@@ -94,7 +95,17 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const alarms = await alarmService.getAll();
-      set({ alarms, loading: false });
+      const now = new Date();
+      const sanitizedAlarms: Alarm[] = [];
+      for (const alarm of alarms) {
+        if (alarm.isActive && alarmService.isOneTimeAlarmExpired(alarm, now)) {
+          void alarmService.toggle(alarm.id, false);
+          sanitizedAlarms.push({ ...alarm, isActive: false });
+        } else {
+          sanitizedAlarms.push(alarm);
+        }
+      }
+      set({ alarms: sanitizedAlarms, loading: false });
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Lỗi khi tải báo thức';
       set({ error: errorMsg, loading: false });
@@ -149,6 +160,18 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
       get().loadAlarms();
       throw err;
     }
+  },
+
+  deactivateIfOneTime: async (id: string): Promise<boolean> => {
+    const alarm = get().alarms.find((a) => a.id === id);
+    if (!alarm || (alarm.repeatDays && alarm.repeatDays.length > 0)) {
+      return false;
+    }
+    if (!alarm.isActive) {
+      return false;
+    }
+    await get().toggleAlarm(id, false);
+    return true;
   },
 
   deleteAlarm: async (id: string) => {

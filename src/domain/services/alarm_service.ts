@@ -133,6 +133,50 @@ export class AlarmService {
     return updatedAlarm;
   }
 
+  /**
+   * Checks whether a one-time alarm has already passed its single scheduled trigger date.
+   */
+  isOneTimeAlarmExpired(alarm: Alarm, now: Date = new Date()): boolean {
+    if (alarm.repeatDays && alarm.repeatDays.length > 0) {
+      return false; // Recurring alarms do not expire
+    }
+
+    const [hourStr, minuteStr] = alarm.time.split(':');
+    const hour = Number.parseInt(hourStr || '0', 10);
+    const minute = Number.parseInt(minuteStr || '0', 10);
+
+    const baseDate = new Date(alarm.updatedAt || alarm.createdAt);
+    const validBase = !Number.isNaN(baseDate.getTime()) ? baseDate : now;
+
+    const targetDate = new Date(validBase);
+    targetDate.setHours(hour, minute, 0, 0);
+
+    // If target was earlier than or equal to activation time, it was set for the next day
+    if (targetDate.getTime() <= validBase.getTime()) {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
+
+    // Expired if current time is past the target time (with 30s grace period for ringing)
+    return now.getTime() > targetDate.getTime() + 30_000;
+  }
+
+  /**
+   * Deactivates an alarm if it is a non-repeating (one-time) alarm.
+   * Returns true if deactivated, false otherwise.
+   */
+  async deactivateIfOneTime(id: string): Promise<boolean> {
+    try {
+      const alarm = await this.getById(id);
+      if (alarm.isActive && (!alarm.repeatDays || alarm.repeatDays.length === 0)) {
+        await this.toggle(id, false);
+        return true;
+      }
+    } catch (err) {
+      console.warn(`Could not deactivate one-time alarm ${id}:`, err);
+    }
+    return false;
+  }
+
   async toggle(id: string, isActive: boolean): Promise<void> {
     const alarm = await this.getById(id);
     if (isActive) {
@@ -150,14 +194,20 @@ export class AlarmService {
   }
 
   /**
-   * Resync all active alarms into expo-notifications and native AlarmManager on app startup or reload
+   * Resync all active alarms into expo-notifications and native AlarmManager on app startup or reload.
+   * Automatically deactivates any one-time alarms whose single trigger time has already passed.
    */
   async syncAllActiveAlarms(): Promise<void> {
     try {
       const alarms = await this.getAll();
+      const now = new Date();
       for (const alarm of alarms) {
         if (alarm.isActive) {
-          await notificationService.scheduleAlarm(alarm);
+          if (this.isOneTimeAlarmExpired(alarm, now)) {
+            await this.toggle(alarm.id, false);
+          } else {
+            await notificationService.scheduleAlarm(alarm);
+          }
         } else {
           await notificationService.cancel(alarm.id);
         }
@@ -169,3 +219,4 @@ export class AlarmService {
 }
 
 export const alarmService = new AlarmService();
+

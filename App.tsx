@@ -36,6 +36,9 @@ export default function App() {
         if (active && active.occurrenceId !== current.occurrenceId) {
           openRingingAlarm({ ...active, type: 'alarm', nativeAudio: true });
         } else if (!active && current.nativeAudio && current.visible) {
+          if (current.id) {
+            void useAlarmStore.getState().deactivateIfOneTime(current.id);
+          }
           closeRingingAlarm();
         }
       } catch (error) {
@@ -142,6 +145,13 @@ export default function App() {
         await reminderService.complete(ringingAlarm.id, true);
       } catch (err) {
         console.warn('Failed to complete reminder:', err);
+      }
+    }
+    if (ringingAlarm.type === 'alarm' && ringingAlarm.id) {
+      try {
+        await useAlarmStore.getState().deactivateIfOneTime(ringingAlarm.id);
+      } catch (err) {
+        console.warn('Failed to deactivate one-time alarm:', err);
       }
     }
     closeRingingAlarm();

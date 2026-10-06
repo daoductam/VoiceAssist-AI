@@ -32,6 +32,7 @@ import {
   ArrowRight,
 } from 'lucide-react-native';
 import * as Notifications from 'expo-notifications';
+import { useAlarmStore } from '@shared/stores/useAlarmStore';
 
 interface AlarmRingingModalProps {
   visible: boolean;
@@ -228,6 +229,11 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
       Notifications.dismissAllNotificationsAsync().catch(() => {});
       onDismiss();
       return;
+    }
+
+    // Proactively deactivate one-time alarm as soon as user wakes up
+    if (alarmId) {
+      void useAlarmStore.getState().deactivateIfOneTime(alarmId);
     }
 
     // Enter Morning Briefing Mode
