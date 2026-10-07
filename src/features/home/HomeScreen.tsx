@@ -25,6 +25,24 @@ import {
   generateHeroAiNote,
 } from './hero_summary_helper';
 
+const formatGreetingDate = (date: Date): string =>
+  date.toLocaleDateString('vi-VN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+const getGreeting = (date: Date): string => {
+  const hour = date.getHours();
+  const greeting = hour < 12
+    ? 'Chào buổi sáng'
+    : hour < 18
+    ? 'Chào buổi chiều'
+    : 'Chào buổi tối';
+
+  return `${greeting}, bạn 👋`;
+};
+
 export const HomeScreen: React.FC = () => {
   const [orbState, setOrbState] = useState<VoiceOrbState>('idle');
   const [liveTranscription, setLiveTranscription] = useState<string>('');
@@ -194,8 +212,8 @@ export const HomeScreen: React.FC = () => {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greetingSub}>Thứ Năm, 10 Tháng 9</Text>
-          <Text style={styles.greetingTitle}>Chào buổi sáng, Tâm 👋</Text>
+          <Text style={styles.greetingSub}>{formatGreetingDate(currentTime)}</Text>
+          <Text style={styles.greetingTitle}>{getGreeting(currentTime)}</Text>
         </View>
         <View style={styles.toneBadge}>
           <Sparkles size={14} color={Colors.ambientPurple} />
