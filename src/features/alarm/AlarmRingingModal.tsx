@@ -20,11 +20,8 @@ import {
 } from '@features/alarm/services/morning_briefing_service';
 import {
   Sun,
-  Bell,
-  BellOff,
   Clock,
   Sparkles,
-  CheckCircle2,
   Mic,
   MicOff,
   ListTodo,
@@ -36,7 +33,6 @@ import { useAlarmStore } from '@shared/stores/useAlarmStore';
 
 interface AlarmRingingModalProps {
   visible: boolean;
-  type?: 'alarm' | 'reminder';
   alarmLabel?: string;
   alarmTime?: string;
   greetingText?: string;
@@ -49,7 +45,6 @@ interface AlarmRingingModalProps {
 
 export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
   visible,
-  type = 'alarm',
   alarmLabel = 'Báo thức',
   alarmTime = '06:30',
   greetingText,
@@ -60,7 +55,6 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
   onSnooze,
 }) => {
   const [pulseAnim] = useState(new Animated.Value(1));
-  const isReminder = type === 'reminder';
 
   // State for Morning Briefing flow
   const [isBriefingMode, setIsBriefingMode] = useState<boolean>(false);
@@ -75,10 +69,7 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
 
   // Compute effective greeting and spoken texts
   const effectiveGreeting =
-    greetingText ||
-    (isReminder
-      ? `Đã đến giờ thực hiện: "${alarmLabel}". Hãy dành chút thời gian hoàn thành ngay nhé! 📌`
-      : 'Chào bạn nhé! Đã đến giờ báo thức rồi. Dậy thôi nào! ☀️');
+    greetingText || 'Chào bạn nhé! Đã đến giờ báo thức rồi. Dậy thôi nào! ☀️';
 
   const effectiveSpeech = spokenText || effectiveGreeting;
 
@@ -107,9 +98,7 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
           if (!isMountedRef.current) break;
 
           await ttsService.speak(
-            isReminder
-              ? `Lời nhắc lúc ${alarmTime}: ${alarmLabel}. Chạm vào nút hoàn thành nếu bạn đã xong việc nhé!`
-              : `Báo thức ${alarmTime}! Đã đến giờ rồi bạn ơi. Bạn có thể nói "Ngủ thêm" hoặc "Dậy rồi" nhé!`
+            `Báo thức ${alarmTime}! Đã đến giờ rồi bạn ơi. Bạn có thể nói "Ngủ thêm" hoặc "Dậy rồi" nhé!`
           );
           if (!isMountedRef.current) break;
           await new Promise((r) => setTimeout(r, 4000));
@@ -142,7 +131,7 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
         ttsService.stop();
       };
     }
-  }, [visible, effectiveSpeech, alarmTime, alarmLabel, isReminder, pulseAnim, nativeAudio]);
+  }, [visible, effectiveSpeech, alarmTime, alarmLabel, pulseAnim, nativeAudio]);
 
   // Voice Command Trigger
   const handleToggleVoiceControl = async () => {
@@ -224,13 +213,6 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
     Vibration.cancel();
     ttsService.stop();
 
-    if (isReminder) {
-      // Reminders don't need a full morning briefing
-      Notifications.dismissAllNotificationsAsync().catch(() => {});
-      onDismiss();
-      return;
-    }
-
     // Proactively deactivate one-time alarm as soon as user wakes up
     if (alarmId) {
       void useAlarmStore.getState().deactivateIfOneTime(alarmId);
@@ -283,17 +265,13 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
             {/* Ambient Top Glow */}
             <Animated.View
               style={[
-                isReminder ? styles.reminderHalo : styles.sunHalo,
+                styles.sunHalo,
                 {
                   transform: [{ scale: pulseAnim }],
                 },
               ]}
             >
-              {isReminder ? (
-                <Bell size={64} color={Colors.secondary} />
-              ) : (
-                <Sun size={68} color={Colors.warning} />
-              )}
+              <Sun size={68} color={Colors.warning} />
             </Animated.View>
 
             {/* Alarm Title & Big Clock */}
@@ -305,18 +283,8 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
             {/* Empathetic Greeting / Dialogue Card */}
             <View style={styles.greetingCard}>
               <View style={styles.greetingHeader}>
-                <Sparkles
-                  size={16}
-                  color={isReminder ? Colors.secondary : Colors.ambientPurple}
-                />
-                <Text
-                  style={[
-                    styles.greetingTag,
-                    isReminder && { color: Colors.secondary },
-                  ]}
-                >
-                  {isReminder ? 'LỜI NHẮC TỪ TRỢ LÝ AI' : 'LỜI CHÀO BUỔI SÁNG NHÂN ÁI'}
-                </Text>
+                <Sparkles size={16} color={Colors.ambientPurple} />
+                <Text style={styles.greetingTag}>LỜI CHÀO BUỔI SÁNG NHÂN ÁI</Text>
               </View>
               <Text style={styles.greetingBody}>{effectiveGreeting}</Text>
             </View>
@@ -349,26 +317,12 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
             <View style={styles.actionContainer}>
               {/* Wake Up / Dismiss Button */}
               <TouchableOpacity
-                style={[
-                  styles.dismissBtn,
-                  isReminder && { backgroundColor: Colors.secondary },
-                ]}
+                style={styles.dismissBtn}
                 onPress={handleWakeUpAction}
                 activeOpacity={0.85}
               >
-                {isReminder ? (
-                  <CheckCircle2 size={22} color="#070810" />
-                ) : (
-                  <Sun size={22} color="#FFFFFF" />
-                )}
-                <Text
-                  style={[
-                    styles.dismissBtnText,
-                    isReminder && { color: '#070810' },
-                  ]}
-                >
-                  {isReminder ? 'Đã hoàn thành ✨' : 'Tôi đã dậy rồi ✨'}
-                </Text>
+                <Sun size={22} color="#FFFFFF" />
+                <Text style={styles.dismissBtnText}>Tôi đã dậy rồi ✨</Text>
               </TouchableOpacity>
 
               {/* Snooze Button */}
@@ -377,18 +331,8 @@ export const AlarmRingingModal: React.FC<AlarmRingingModalProps> = ({
                 onPress={handleSnooze}
                 activeOpacity={0.8}
               >
-                <Clock
-                  size={18}
-                  color={isReminder ? Colors.secondary : Colors.warning}
-                />
-                <Text
-                  style={[
-                    styles.snoozeBtnText,
-                    isReminder && { color: Colors.secondary },
-                  ]}
-                >
-                  {isReminder ? 'Nhắc lại sau 10 phút' : 'Báo lại 5 phút'}
-                </Text>
+                <Clock size={18} color={Colors.warning} />
+                <Text style={styles.snoozeBtnText}>Báo lại 5 phút</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -472,17 +416,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderWidth: 2,
     borderColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  reminderHalo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    borderWidth: 2,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
   },
   timeSection: {
     alignItems: 'center',

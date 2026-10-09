@@ -36,15 +36,16 @@ class AlarmPlaybackService : Service() {
             }
         }
 
-        fun snooze(id: String) {
+        fun snooze(id: String, minutes: Int = AlarmScheduler.DEFAULT_SNOOZE_MINUTES) {
             val service = instance ?: return
             val data = activeAlarm?.takeIf { it.getString("id") == id } ?: return
+            require(minutes > 0) { "Snooze minutes must be positive" }
             val snoozed = Bundle(data).apply {
                 putString("id", "${data.getString("id")!!.removeSuffix("_snooze")}_snooze")
                 remove("repeatDays")
             }
             AlarmScheduler.schedule(service, snoozed,
-                System.currentTimeMillis() + AlarmScheduler.SNOOZE_MINUTES * 60_000L)
+                System.currentTimeMillis() + minutes * 60_000L)
             service.finishAlarm()
         }
     }
@@ -60,7 +61,11 @@ class AlarmPlaybackService : Service() {
             if (activeAlarm?.getString("occurrenceId") == intent.getStringExtra("occurrenceId")) {
                 try {
                     val id = intent.getStringExtra("id") ?: return START_NOT_STICKY
-                    if (intent.action == SNOOZE) snooze(id) else stopAlarm(id)
+                    if (intent.action == SNOOZE) {
+                        snooze(id, AlarmScheduler.DEFAULT_SNOOZE_MINUTES)
+                    } else {
+                        stopAlarm(id)
+                    }
                 } catch (error: Exception) {
                     Log.e("VoiceAssistAlarm", "Could not snooze; alarm remains active", error)
                 }

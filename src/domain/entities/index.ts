@@ -1,5 +1,7 @@
 import { SyncStatus, ToneStyle } from '../enums';
 
+export * from './alert';
+
 export interface Alarm {
   id: string;
   label: string;

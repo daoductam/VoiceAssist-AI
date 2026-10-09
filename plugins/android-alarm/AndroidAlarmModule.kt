@@ -127,7 +127,10 @@ class AndroidAlarmModule(context: ReactApplicationContext) : ReactContextBaseJav
     fun resumeSound(id: String, promise: Promise) = onMain(promise) { AlarmPlaybackService.resumeSound(id) }
 
     @ReactMethod
-    fun snooze(id: String, promise: Promise) = onMain(promise) { AlarmPlaybackService.snooze(id) }
+    fun snooze(id: String, minutes: Double, promise: Promise) = onMain(promise) {
+        require(minutes.isFinite() && minutes > 0) { "Snooze minutes must be positive" }
+        AlarmPlaybackService.snooze(id, minutes.toInt())
+    }
 
     private fun onMain(promise: Promise, action: () -> Unit) {
         reactApplicationContext.runOnUiQueueThread {

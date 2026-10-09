@@ -9,7 +9,7 @@ import android.os.Bundle
 import java.util.Calendar
 
 object AlarmScheduler {
-    const val SNOOZE_MINUTES = 10
+    const val DEFAULT_SNOOZE_MINUTES = 5
 
     @Synchronized private fun remember(context: Context, id: String, scheduled: Boolean) {
         val preferences = context.getSharedPreferences("native_alarms", Context.MODE_PRIVATE)

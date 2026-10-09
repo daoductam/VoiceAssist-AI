@@ -25,6 +25,7 @@ import {
   Volume2,
 } from 'lucide-react-native';
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
+import { useAlertStore } from '@shared/stores/useAlertStore';
 import { useReminderStore } from '@shared/stores/useReminderStore';
 import { useTodoStore } from '@shared/stores/useTodoStore';
 import { notificationService } from '@domain/services/notification_service';
@@ -59,8 +60,8 @@ export const AlarmListScreen: React.FC = () => {
     deleteAlarm,
     createAlarm,
     updateAlarm,
-    openRingingAlarm,
   } = useAlarmStore();
+  const { openAlarm, openReminder } = useAlertStore();
   const {
     reminders,
     loadReminders,
@@ -88,8 +89,7 @@ export const AlarmListScreen: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit',
     });
-    openRingingAlarm({
-      type: 'alarm',
+    openAlarm({
       label: 'Báo thức ban ngày',
       time: nowTime,
       spokenText: `Đã ${nowTime} rồi bạn ơi! Đến giờ nghỉ tay, uống ngụm nước và chuẩn bị hoàn thành mục tiêu nhé!`,
@@ -133,9 +133,8 @@ export const AlarmListScreen: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit',
     });
-    openRingingAlarm({
-      type: 'reminder',
-      label: 'Uống nước nạp năng lượng',
+    openReminder({
+      title: 'Uống nước nạp năng lượng',
       time: nowTime,
       spokenText: `Ting ting! Đã ${nowTime} rồi bạn ơi. Đến giờ uống một cốc nước để nạp lại năng lượng rồi nè!`,
     });

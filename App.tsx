@@ -9,6 +9,7 @@ import { AlarmListScreen } from '@features/alarm/AlarmListScreen';
 import { ChatScreen } from '@features/chat/ChatScreen';
 import { SettingsScreen } from '@features/settings/SettingsScreen';
 import { AlarmRingingModal } from '@features/alarm/AlarmRingingModal';
+import { ReminderActionSheet } from '@features/alarm/ReminderActionSheet';
 import * as Notifications from 'expo-notifications';
 import { setAudioModeAsync } from 'expo-audio';
 import { notificationService } from '@domain/services/notification_service';
@@ -17,12 +18,46 @@ import { reminderService } from '@domain/services/reminder_service';
 import { AlarmPermissionError, NativeAlarmBridge } from '@core/utils/native_alarm_bridge';
 
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
+import { useAlertStore } from '@shared/stores/useAlertStore';
+import { useReminderStore } from '@shared/stores/useReminderStore';
+
+const getStringValue = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [isListening, setIsListening] = useState<boolean>(false);
 
-  const { ringingAlarm, openRingingAlarm, closeRingingAlarm } = useAlarmStore();
+  const { activeAlert, openAlarm, openReminder, closeAlert } = useAlertStore();
+
+  const openAlertFromNotification = React.useCallback(
+    (data: Record<string, unknown>, fallbackLabel?: string) => {
+      const type = getStringValue(data.type);
+      const time = getStringValue(data.time) || new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const label = getStringValue(data.label) || fallbackLabel;
+      const spokenText = getStringValue(data.spokenText);
+
+      if (type === 'alarm') {
+        openAlarm({
+          alarmId: getStringValue(data.alarmId),
+          label: label || 'Báo thức',
+          time,
+          spokenText,
+        });
+      } else if (type === 'reminder') {
+        openReminder({
+          reminderId: getStringValue(data.reminderId),
+          title: label || 'Lời nhắc nhở',
+          time,
+          spokenText,
+        });
+      }
+    },
+    [openAlarm, openReminder]
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -32,14 +67,24 @@ export default function App() {
       try {
         const active = await NativeAlarmBridge.getActiveAlarm();
         if (disposed || version !== requestVersion || AppState.currentState !== 'active') return;
-        const current = useAlarmStore.getState().ringingAlarm;
-        if (active && active.occurrenceId !== current.occurrenceId) {
-          openRingingAlarm({ ...active, type: 'alarm', nativeAudio: true });
-        } else if (!active && current.nativeAudio && current.visible) {
-          if (current.id) {
-            void useAlarmStore.getState().deactivateIfOneTime(current.id);
+        const current = useAlertStore.getState().activeAlert;
+        if (
+          active &&
+          !(current?.type === 'alarm' && current.occurrenceId === active.occurrenceId)
+        ) {
+          openAlarm({
+            alarmId: active.id,
+            label: active.label,
+            time: active.time,
+            spokenText: active.spokenText,
+            nativeAudio: true,
+            occurrenceId: active.occurrenceId,
+          });
+        } else if (!active && current?.type === 'alarm' && current.nativeAudio) {
+          if (current.alarmId) {
+            void useAlarmStore.getState().deactivateIfOneTime(current.alarmId);
           }
-          closeRingingAlarm();
+          closeAlert();
         }
       } catch (error) {
         console.warn('Could not read active native alarm:', error);
@@ -55,7 +100,7 @@ export default function App() {
       unsubscribe();
       appStateSubscription.remove();
     };
-  }, [openRingingAlarm, closeRingingAlarm]);
+  }, [openAlarm, closeAlert]);
 
   useEffect(() => {
     // 1. Enable audio playback in silent mode on iOS
@@ -72,25 +117,14 @@ export default function App() {
     // 3. Listen for incoming notification while app is in foreground
     const receivedSub = Notifications.addNotificationReceivedListener(
       (notification) => {
-        const current = useAlarmStore.getState().ringingAlarm;
-        if (current.nativeAudio && current.visible) return;
+        const current = useAlertStore.getState().activeAlert;
+        if (current?.type === 'alarm' && current.nativeAudio) return;
         const data = notification.request.content.data;
-        if (data && (data.type === 'alarm' || data.type === 'reminder')) {
-          openRingingAlarm({
-            type: data.type as 'alarm' | 'reminder',
-            id: (data.alarmId || data.reminderId) as string,
-            label:
-              (data.label as string) ||
-              notification.request.content.title ||
-              (data.type === 'reminder' ? 'Lời nhắc nhở' : 'Báo thức'),
-            time:
-              (data.time as string) ||
-              new Date().toLocaleTimeString('vi-VN', {
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-            spokenText: data.spokenText as string,
-          });
+        if (data && typeof data === 'object') {
+          openAlertFromNotification(
+            data as Record<string, unknown>,
+            notification.request.content.title || undefined
+          );
         }
       }
     );
@@ -99,25 +133,14 @@ export default function App() {
     // ZERO-FRICTION 1-TAP TO TALK: User taps banner -> immediately opens modal & plays voice
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        const current = useAlarmStore.getState().ringingAlarm;
-        if (current.nativeAudio && current.visible) return;
+        const current = useAlertStore.getState().activeAlert;
+        if (current?.type === 'alarm' && current.nativeAudio) return;
         const data = response.notification.request.content.data;
-        if (data && (data.type === 'alarm' || data.type === 'reminder')) {
-          openRingingAlarm({
-            type: data.type as 'alarm' | 'reminder',
-            id: (data.alarmId || data.reminderId) as string,
-            label:
-              (data.label as string) ||
-              response.notification.request.content.title ||
-              (data.type === 'reminder' ? 'Lời nhắc nhở' : 'Báo thức'),
-            time:
-              (data.time as string) ||
-              new Date().toLocaleTimeString('vi-VN', {
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-            spokenText: data.spokenText as string,
-          });
+        if (data && typeof data === 'object') {
+          openAlertFromNotification(
+            data as Record<string, unknown>,
+            response.notification.request.content.title || undefined
+          );
         }
       }
     );
@@ -126,7 +149,7 @@ export default function App() {
       receivedSub.remove();
       responseSub.remove();
     };
-  }, [openRingingAlarm]);
+  }, [openAlertFromNotification]);
 
   const handleMicPress = () => {
     setIsListening((prev) => !prev);
@@ -137,58 +160,91 @@ export default function App() {
   };
 
   const handleDismissAlarm = async () => {
-    if (ringingAlarm.nativeAudio && ringingAlarm.id) {
-      await NativeAlarmBridge.stopRinging(ringingAlarm.id);
+    const alert = useAlertStore.getState().activeAlert;
+    if (!alert || alert.type !== 'alarm') return;
+
+    if (alert.nativeAudio && alert.alarmId) {
+      await NativeAlarmBridge.stopRinging(alert.alarmId);
     }
-    if (ringingAlarm.type === 'reminder' && ringingAlarm.id) {
+    if (alert.alarmId) {
       try {
-        await reminderService.complete(ringingAlarm.id, true);
-      } catch (err) {
-        console.warn('Failed to complete reminder:', err);
-      }
-    }
-    if (ringingAlarm.type === 'alarm' && ringingAlarm.id) {
-      try {
-        await useAlarmStore.getState().deactivateIfOneTime(ringingAlarm.id);
+        const alarm = useAlarmStore.getState().alarms.find(
+          (item) => item.id === alert.alarmId
+        ) || await alarmService.getById(alert.alarmId).catch(() => null);
+        if (alarm && alarm.isActive && alarm.repeatDays.length === 0) {
+          await alarmService.toggle(alarm.id, false);
+          void useAlarmStore.getState().loadAlarms();
+        }
       } catch (err) {
         console.warn('Failed to deactivate one-time alarm:', err);
       }
     }
-    closeRingingAlarm();
+    closeAlert();
   };
 
-  const handleSnoozeAlarm = () => {
-    if (ringingAlarm.nativeAudio && ringingAlarm.id) {
-      NativeAlarmBridge.snooze(ringingAlarm.id).then(closeRingingAlarm).catch(error => {
-        if (error instanceof AlarmPermissionError) return;
-        Alert.alert('Chưa thể hoãn báo thức', (error as Error).message);
-      });
+  const handleSnoozeAlarm = async () => {
+    const alert = useAlertStore.getState().activeAlert;
+    if (!alert || alert.type !== 'alarm') return;
+
+    let alarm = alert.alarmId
+      ? useAlarmStore.getState().alarms.find((item) => item.id === alert.alarmId)
+      : undefined;
+    if (!alarm && alert.alarmId) {
+      alarm = await alarmService.getById(alert.alarmId).catch(() => undefined);
+    }
+    try {
+      if (alert.nativeAudio && alert.alarmId) {
+        await NativeAlarmBridge.snooze(alert.alarmId, alarm?.snoozeDuration || 5);
+      } else if (alarm) {
+        await notificationService.snoozeAlarm(alarm);
+      } else {
+        throw new Error('Không tìm thấy dữ liệu báo thức để báo lại.');
+      }
+      closeAlert();
+    } catch (error) {
+      if (error instanceof AlarmPermissionError) return;
+      Alert.alert('Chưa thể hoãn báo thức', (error as Error).message);
+    }
+  };
+
+  const handleCompleteReminder = async () => {
+    const alert = useAlertStore.getState().activeAlert;
+    if (!alert || alert.type !== 'reminder') return;
+
+    if (!alert.reminderId) {
+      closeAlert();
       return;
     }
-    const isReminder = ringingAlarm.type === 'reminder';
-    const snoozeLabel = ringingAlarm.label;
-    const snoozeType = ringingAlarm.type;
-    const snoozeTime = ringingAlarm.time;
 
-    closeRingingAlarm();
-    // Schedule a 10-minute snooze notification
-    Notifications.scheduleNotificationAsync({
-      content: {
-        title: isReminder ? `🔔 ${snoozeLabel} (Nhắc lại)` : `⏰ ${snoozeTime} • ${snoozeLabel} (Báo lại)`,
-        body: `Đã hết thời gian hoãn cho "${snoozeLabel}". Chạm vào đây để hoàn thành ngay nhé!`,
-        sound: 'default',
-        data: {
-          type: snoozeType,
-          label: snoozeLabel,
-          time: snoozeTime,
-          spokenText: `Đã hết thời gian hoãn cho ${snoozeLabel}. Hãy hoàn thành ngay bạn nhé!`,
-        },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 600, // 10 minutes
-      },
-    });
+    try {
+      await reminderService.complete(alert.reminderId, true);
+      void useReminderStore.getState().loadReminders();
+      closeAlert();
+    } catch (error) {
+      Alert.alert('Chưa thể hoàn thành lời nhắc', (error as Error).message);
+    }
+  };
+
+  const handleSnoozeReminder = async () => {
+    const alert = useAlertStore.getState().activeAlert;
+    if (!alert || alert.type !== 'reminder' || !alert.reminderId) return;
+
+    try {
+      const reminder = useReminderStore.getState().reminders.find(
+        (item) => item.id === alert.reminderId
+      ) || (await reminderService.getAll()).find(
+        (item) => item.id === alert.reminderId
+      );
+      if (!reminder) {
+        closeAlert();
+        Alert.alert('Không tìm thấy lời nhắc', 'Lời nhắc này có thể đã bị xóa.');
+        return;
+      }
+      await notificationService.snoozeReminder(reminder);
+      closeAlert();
+    } catch (error) {
+      Alert.alert('Chưa thể nhắc lại', (error as Error).message);
+    }
   };
 
   const renderCurrentScreen = () => {
@@ -218,16 +274,23 @@ export default function App() {
           isListening={isListening}
         />
         <AlarmRingingModal
-          visible={ringingAlarm.visible}
-          type={ringingAlarm.type}
-          alarmLabel={ringingAlarm.label}
-          alarmTime={ringingAlarm.time}
-          greetingText={ringingAlarm.spokenText}
-          spokenText={ringingAlarm.spokenText}
-          nativeAudio={ringingAlarm.nativeAudio}
-          alarmId={ringingAlarm.id}
+          visible={activeAlert?.type === 'alarm'}
+          alarmLabel={activeAlert?.type === 'alarm' ? activeAlert.label : undefined}
+          alarmTime={activeAlert?.type === 'alarm' ? activeAlert.time : undefined}
+          greetingText={activeAlert?.type === 'alarm' ? activeAlert.spokenText : undefined}
+          spokenText={activeAlert?.type === 'alarm' ? activeAlert.spokenText : undefined}
+          nativeAudio={activeAlert?.type === 'alarm' ? activeAlert.nativeAudio : false}
+          alarmId={activeAlert?.type === 'alarm' ? activeAlert.alarmId : undefined}
           onDismiss={handleDismissAlarm}
           onSnooze={handleSnoozeAlarm}
+        />
+        <ReminderActionSheet
+          visible={activeAlert?.type === 'reminder'}
+          title={activeAlert?.type === 'reminder' ? activeAlert.title : 'Lời nhắc nhở'}
+          time={activeAlert?.type === 'reminder' ? activeAlert.time : '--:--'}
+          onComplete={handleCompleteReminder}
+          onSnooze={handleSnoozeReminder}
+          onClose={closeAlert}
         />
       </SafeAreaView>
     </SafeAreaProvider>

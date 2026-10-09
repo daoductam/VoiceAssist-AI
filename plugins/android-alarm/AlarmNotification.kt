@@ -57,7 +57,7 @@ object AlarmNotification {
             .setFullScreenIntent(fullScreen, true)
             .setContentIntent(fullScreen)
             .addAction(0, "Tắt chuông", action(context, data, AlarmPlaybackService.STOP))
-            .addAction(0, "Hoãn 10 phút", action(context, data, AlarmPlaybackService.SNOOZE))
+            .addAction(0, "Hoãn ${AlarmScheduler.DEFAULT_SNOOZE_MINUTES} phút", action(context, data, AlarmPlaybackService.SNOOZE))
             .build()
     }
 }

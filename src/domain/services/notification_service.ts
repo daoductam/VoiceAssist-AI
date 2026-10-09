@@ -19,6 +19,16 @@ Notifications.setNotificationHandler({
 export class NotificationService {
   private isInitialized = false;
 
+  private getAlarmSnoozeMinutes(alarm: Alarm, fallbackMinutes = 5): number {
+    return Number.isFinite(alarm.snoozeDuration) && alarm.snoozeDuration > 0
+      ? Math.floor(alarm.snoozeDuration)
+      : fallbackMinutes;
+  }
+
+  private getReminderSnoozeMinutes(minutes = 10): number {
+    return Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : 10;
+  }
+
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
@@ -111,7 +121,8 @@ export class NotificationService {
       alarm.repeatDays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) {
       throw new Error('Giờ hoặc ngày lặp báo thức không hợp lệ.');
     }
-    if (Platform.OS === 'android') await NativeAlarmBridge.ensureReady();
+    const useNativeAlarm = Platform.OS === 'android' && NativeAlarmBridge.available;
+    if (useNativeAlarm) await NativeAlarmBridge.ensureReady();
 
     const [hourStr, minuteStr] = alarm.time.split(':');
     const hour = parseInt(hourStr, 10);
@@ -131,7 +142,7 @@ export class NotificationService {
     const body = bodyMessage || alertInfo.body;
     const spokenText = alertInfo.spokenText;
 
-    if (Platform.OS === 'android') {
+    if (useNativeAlarm) {
       const targetDate = new Date();
       targetDate.setHours(hour, minute, 0, 0);
       while (targetDate.getTime() <= Date.now() ||
@@ -262,27 +273,85 @@ export class NotificationService {
       },
     };
 
-    let primaryId = reminder.id;
-    // Schedule consecutive burst (T, T+8s) so it doesn't get missed during daytime
-    for (let i = 0; i < 2; i++) {
-      const burstDate = new Date(triggerDate.getTime() + i * 8000);
-      const burstId = await Notifications.scheduleNotificationAsync({
-        identifier: `${reminder.id}_burst_${i}`,
-        content: {
-          ...content,
-          title: i === 0 ? content.title : `🔔 ${formattedTime} • ${reminder.title} (Nhắc lại)`,
-          body: i === 0 ? content.body : `Đến giờ thực hiện rồi! Chạm vào đây để hoàn thành nhé 📌`,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: burstDate,
-          channelId: 'reminders_channel',
-        },
-      });
-      if (i === 0) primaryId = burstId;
+    return Notifications.scheduleNotificationAsync({
+      identifier: reminder.id,
+      content,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: triggerDate,
+        channelId: 'reminders_channel',
+      },
+    });
+  }
+
+  async snoozeAlarm(alarm: Alarm, fallbackMinutes = 5): Promise<void> {
+    const minutes = this.getAlarmSnoozeMinutes(alarm, fallbackMinutes);
+    if (Platform.OS === 'android' && NativeAlarmBridge.available) {
+      await NativeAlarmBridge.snooze(alarm.id, minutes);
+      return;
     }
 
-    return primaryId;
+    await this.cancelExpoNotifications(`${alarm.id}_snooze`);
+    await Notifications.scheduleNotificationAsync({
+      identifier: `${alarm.id}_snooze`,
+      content: {
+        title: `⏰ ${alarm.time} • ${alarm.label || 'Báo thức'} (Báo lại)`,
+        body: `Đã hết thời gian báo lại cho "${alarm.label || 'Báo thức'}".`,
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        categoryIdentifier: 'alarm_actions',
+        data: {
+          type: 'alarm',
+          alarmId: alarm.id,
+          time: alarm.time,
+          label: alarm.label || 'Báo thức',
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: minutes * 60,
+        channelId: 'alarms_channel',
+      },
+    });
+  }
+
+  async snoozeReminder(reminder: Reminder, minutes = 10): Promise<void> {
+    const snoozeMinutes = this.getReminderSnoozeMinutes(minutes);
+    const identifier = `${reminder.id}_snooze`;
+    const triggerDate = new Date(Date.now() + snoozeMinutes * 60 * 1000);
+    const formattedTime = triggerDate.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const tone = useSettingsStore.getState().toneStyle || 'friendly';
+    const alertInfo = responseGenerator.generateReminderAlert(
+      reminder.title,
+      formattedTime,
+      tone
+    );
+
+    await this.cancelExpoNotifications(identifier);
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: alertInfo.title,
+        body: alertInfo.body,
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        data: {
+          type: 'reminder',
+          reminderId: reminder.id,
+          time: formattedTime,
+          label: reminder.title,
+          spokenText: alertInfo.spokenText,
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: snoozeMinutes * 60,
+        channelId: 'reminders_channel',
+      },
+    });
   }
 
   /**
@@ -299,7 +368,7 @@ export class NotificationService {
     const alertInfo = responseGenerator.generateAlarmAlert('Thử nghiệm báo thức', nowTime, tone);
 
     if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('Số giây phải lớn hơn 0.');
-    if (Platform.OS === 'android') {
+    if (Platform.OS === 'android' && NativeAlarmBridge.available) {
       await NativeAlarmBridge.ensureReady();
       await this.cancel('test_alarm_native');
       for (let i = 0; i < 3; i++) {
@@ -359,28 +428,26 @@ export class NotificationService {
       tone
     );
 
-    for (let i = 0; i < 2; i++) {
-      await Notifications.scheduleNotificationAsync({
-        identifier: `test_reminder_burst_${i}`,
-        content: {
-          title: i === 0 ? alertInfo.title : `🔔 ${nowTime} • Thử lời nhắc (${i + 1}/2)`,
-          body: i === 0 ? alertInfo.body : 'Chạm vào thông báo này để nghe AI đọc lời nhắc nhé! 📌',
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-          data: {
-            type: 'reminder',
-            time: nowTime,
-            label: 'Uống nước bổ sung năng lượng',
-            spokenText: alertInfo.spokenText,
-          },
+    await Notifications.scheduleNotificationAsync({
+      identifier: 'test_reminder',
+      content: {
+        title: alertInfo.title,
+        body: alertInfo.body,
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        data: {
+          type: 'reminder',
+          time: nowTime,
+          label: 'Uống nước bổ sung năng lượng',
+          spokenText: alertInfo.spokenText,
         },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: Math.max(1, seconds + i * 4),
-          channelId: 'reminders_channel',
-        },
-      });
-    }
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: Math.max(1, seconds),
+        channelId: 'reminders_channel',
+      },
+    });
   }
 
   /**
@@ -394,6 +461,7 @@ export class NotificationService {
   private async cancelExpoNotifications(identifier: string): Promise<void> {
     try {
       await Notifications.cancelScheduledNotificationAsync(identifier);
+      await Notifications.cancelScheduledNotificationAsync(`${identifier}_snooze`);
       for (let i = 0; i < 5; i++) {
         await Notifications.cancelScheduledNotificationAsync(`${identifier}_burst_${i}`);
       }

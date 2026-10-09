@@ -108,8 +108,11 @@ export class NativeAlarmBridge {
     if (this.available) await AndroidAlarmModule.resumeSound(id);
   }
 
-  static async snooze(id: string): Promise<void> {
+  static async snooze(id: string, minutes: number): Promise<void> {
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      throw new Error('Thời lượng báo lại phải lớn hơn 0 phút.');
+    }
     await this.ensureReady();
-    await AndroidAlarmModule.snooze(id);
+    await AndroidAlarmModule.snooze(id, minutes);
   }
 }

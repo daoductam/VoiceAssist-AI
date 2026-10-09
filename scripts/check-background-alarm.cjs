@@ -11,7 +11,7 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function fixture({ permissionError, scheduleError, platform = 'android' } = {}) {
+function fixture({ permissionError, scheduleError, platform = 'android', nativeAvailable = true } = {}) {
   const calls = { native: [], expo: [], cancelled: [], nativeCancelled: [] };
   const now = new Date(2026, 8, 13, 10, 0, 0).getTime(); // Sunday, local time.
   class Clock extends Date {
@@ -20,6 +20,7 @@ function fixture({ permissionError, scheduleError, platform = 'android' } = {}) 
   }
   const noop = async () => {};
   const bridge = {
+    available: nativeAvailable,
     ensureReady: async () => { if (permissionError) throw permissionError; },
     setExactAlarm: async params => {
       if (scheduleError) throw scheduleError;
@@ -68,6 +69,15 @@ async function check(name, run) {
     assert.equal(calls.native[0].spokenText, 'Dậy thôi bạn ơi');
     assert.equal(calls.expo.length, 0);
   });
+  await check('Expo Go on Android falls back to Expo notifications', async () => {
+    const { service, calls } = fixture({ nativeAvailable: false });
+    await service.triggerTestAlarm(3);
+    assert.equal(calls.native.length, 0);
+    assert.equal(calls.expo.length, 3);
+    await service.scheduleAlarm({ id: 'expo-go-alarm', label: 'Expo Go', time: '11:00', repeatDays: [] });
+    assert.equal(calls.native.length, 0);
+    assert.equal(calls.expo.length, 6);
+  });
   await check('native scheduling failure rejects instead of reporting a notification as success', async () => {
     const failure = new Error('Native scheduling failed');
     const { service, calls } = fixture({ scheduleError: failure });
@@ -107,7 +117,12 @@ async function check(name, run) {
     const { service, calls } = fixture();
     await service.cancel('personal');
     assert.deepEqual(calls.nativeCancelled, ['personal']);
-    assert.ok(calls.cancelled.every(id => id === 'personal' || id.startsWith('personal_burst_')));
+    assert.ok(calls.cancelled.every(id =>
+      id === 'personal' ||
+      id === 'personal_snooze' ||
+      id.startsWith('personal_burst_') ||
+      id.startsWith('personal_day_')
+    ));
   });
   await check('iOS test still schedules Expo notifications', async () => {
     const { service, calls } = fixture({ platform: 'ios' });

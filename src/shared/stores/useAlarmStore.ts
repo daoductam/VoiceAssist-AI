@@ -2,33 +2,10 @@ import { create } from 'zustand';
 import { Alarm } from '@domain/entities';
 import { alarmService } from '@domain/services/alarm_service';
 
-export interface RingingAlarmState {
-  visible: boolean;
-  type: 'alarm' | 'reminder';
-  id?: string;
-  label: string;
-  time: string;
-  spokenText?: string;
-  nativeAudio?: boolean;
-  occurrenceId?: string;
-}
-
 interface AlarmStoreState {
   alarms: Alarm[];
   loading: boolean;
   error: string | null;
-
-  ringingAlarm: RingingAlarmState;
-  openRingingAlarm: (params?: {
-    type?: 'alarm' | 'reminder';
-    id?: string;
-    label?: string;
-    time?: string;
-    spokenText?: string;
-    nativeAudio?: boolean;
-    occurrenceId?: string;
-  }) => void;
-  closeRingingAlarm: () => void;
 
   loadAlarms: () => Promise<void>;
   createAlarm: (params: {
@@ -57,39 +34,6 @@ export const useAlarmStore = create<AlarmStoreState>((set, get) => ({
   alarms: [],
   loading: false,
   error: null,
-
-  ringingAlarm: {
-    visible: false,
-    type: 'alarm',
-    label: 'Báo thức buổi sáng',
-    time: '06:30',
-  },
-
-  openRingingAlarm: (params) => {
-    set({
-      ringingAlarm: {
-        visible: true,
-        type: params?.type || 'alarm',
-        id: params?.id,
-        label: params?.label || (params?.type === 'reminder' ? 'Lời nhắc nhở' : 'Báo thức'),
-        time:
-          params?.time ||
-          new Date().toLocaleTimeString('vi-VN', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        spokenText: params?.spokenText,
-        nativeAudio: params?.nativeAudio ?? false,
-        occurrenceId: params?.occurrenceId,
-      },
-    });
-  },
-
-  closeRingingAlarm: () => {
-    set((state) => ({
-      ringingAlarm: { ...state.ringingAlarm, visible: false },
-    }));
-  },
 
   loadAlarms: async () => {
     set({ loading: true, error: null });
