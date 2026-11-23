@@ -31,6 +31,7 @@ import { useTodoStore } from '@shared/stores/useTodoStore';
 import { notificationService } from '@domain/services/notification_service';
 import { ttsService } from '@features/voice/tts_service';
 import { AlarmPermissionError } from '@core/utils/native_alarm_bridge';
+import { TimePicker } from '@shared/components/TimePicker';
 
 type SubTab = 'alarms' | 'reminders' | 'todos';
 
@@ -798,241 +799,238 @@ export const AlarmListScreen: React.FC = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {/* Form for Alarms */}
-            {subTab === 'alarms' && (
-              <>
-                <Text style={styles.modalTitle}>
-                  {editingAlarmId ? '⏰ Sửa báo thức' : '⏰ Thêm báo thức mới'}
-                </Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScroll}
+            >
+              {/* Form for Alarms */}
+              {subTab === 'alarms' && (
+                <>
+                  <Text style={styles.modalTitle}>
+                    {editingAlarmId ? '⏰ Sửa báo thức' : '⏰ Thêm báo thức mới'}
+                  </Text>
 
-                <Text style={styles.inputLabel}>Giờ báo thức (HH:mm)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={inputTime}
-                  onChangeText={setInputTime}
-                  placeholder="07:00"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={5}
-                />
+                  <TimePicker
+                    value={inputTime}
+                    onChange={setInputTime}
+                    mode="alarm"
+                    label="Giờ báo thức"
+                  />
 
-                <Text style={styles.inputLabel}>Tên báo thức</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={inputLabel}
-                  onChangeText={setInputLabel}
-                  placeholder="Báo thức sáng"
-                  placeholderTextColor={Colors.textMuted}
-                />
+                  <Text style={styles.inputLabel}>Tên báo thức</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={inputLabel}
+                    onChangeText={setInputLabel}
+                    placeholder="Báo thức sáng"
+                    placeholderTextColor={Colors.textMuted}
+                  />
 
-                <Text style={styles.inputLabel}>Lặp lại các ngày</Text>
-                <View style={styles.modalDaysRow}>
-                  {DAY_LABELS_VN.map((dayLabel, dayIndex) => {
-                    const isSelected = inputRepeatDays.includes(dayIndex);
-                    return (
-                      <TouchableOpacity
-                        key={dayLabel}
-                        style={[
-                          styles.modalDayBtn,
-                          isSelected && styles.modalDayBtnSelected,
-                        ]}
-                        onPress={() => {
-                          setInputRepeatDays((prev) =>
-                            prev.includes(dayIndex)
-                              ? prev.filter((d) => d !== dayIndex)
-                              : [...prev, dayIndex].sort((a, b) => a - b)
-                          );
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text
+                  <Text style={styles.inputLabel}>Lặp lại các ngày</Text>
+                  <View style={styles.modalDaysRow}>
+                    {DAY_LABELS_VN.map((dayLabel, dayIndex) => {
+                      const isSelected = inputRepeatDays.includes(dayIndex);
+                      return (
+                        <TouchableOpacity
+                          key={dayLabel}
                           style={[
-                            styles.modalDayBtnText,
-                            isSelected && styles.modalDayBtnTextSelected,
+                            styles.modalDayBtn,
+                            isSelected && styles.modalDayBtnSelected,
                           ]}
+                          onPress={() => {
+                            setInputRepeatDays((prev) =>
+                              prev.includes(dayIndex)
+                                ? prev.filter((d) => d !== dayIndex)
+                                : [...prev, dayIndex].sort((a, b) => a - b)
+                            );
+                          }}
+                          activeOpacity={0.7}
                         >
-                          {dayLabel}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                          <Text
+                            style={[
+                              styles.modalDayBtnText,
+                              isSelected && styles.modalDayBtnTextSelected,
+                            ]}
+                          >
+                            {dayLabel}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
 
-                {/* Preset Chips */}
-                <View style={styles.presetRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.presetChip,
-                      inputRepeatDays.length === 0 && styles.presetChipActive,
-                    ]}
-                    onPress={() => setInputRepeatDays([])}
-                  >
-                    <Text
+                  {/* Preset Chips */}
+                  <View style={styles.presetRow}>
+                    <TouchableOpacity
                       style={[
-                        styles.presetChipText,
-                        inputRepeatDays.length === 0 &&
-                          styles.presetChipTextActive,
+                        styles.presetChip,
+                        inputRepeatDays.length === 0 && styles.presetChipActive,
                       ]}
+                      onPress={() => setInputRepeatDays([])}
                     >
-                      Một lần
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.presetChip,
-                      inputRepeatDays.length === 5 &&
-                        [0, 1, 2, 3, 4].every((d) =>
-                          inputRepeatDays.includes(d)
-                        ) &&
-                        styles.presetChipActive,
-                    ]}
-                    onPress={() => setInputRepeatDays([0, 1, 2, 3, 4])}
-                  >
-                    <Text
+                      <Text
+                        style={[
+                          styles.presetChipText,
+                          inputRepeatDays.length === 0 &&
+                            styles.presetChipTextActive,
+                        ]}
+                      >
+                        Một lần
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={[
-                        styles.presetChipText,
+                        styles.presetChip,
                         inputRepeatDays.length === 5 &&
                           [0, 1, 2, 3, 4].every((d) =>
                             inputRepeatDays.includes(d)
                           ) &&
-                          styles.presetChipTextActive,
+                          styles.presetChipActive,
                       ]}
+                      onPress={() => setInputRepeatDays([0, 1, 2, 3, 4])}
                     >
-                      T2 - T6
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.presetChip,
-                      inputRepeatDays.length === 2 &&
-                        [5, 6].every((d) => inputRepeatDays.includes(d)) &&
-                        styles.presetChipActive,
-                    ]}
-                    onPress={() => setInputRepeatDays([5, 6])}
-                  >
-                    <Text
+                      <Text
+                        style={[
+                          styles.presetChipText,
+                          inputRepeatDays.length === 5 &&
+                            [0, 1, 2, 3, 4].every((d) =>
+                              inputRepeatDays.includes(d)
+                            ) &&
+                            styles.presetChipTextActive,
+                        ]}
+                      >
+                        T2 - T6
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={[
-                        styles.presetChipText,
+                        styles.presetChip,
                         inputRepeatDays.length === 2 &&
                           [5, 6].every((d) => inputRepeatDays.includes(d)) &&
-                          styles.presetChipTextActive,
+                          styles.presetChipActive,
                       ]}
+                      onPress={() => setInputRepeatDays([5, 6])}
                     >
-                      Cuối tuần
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.presetChip,
-                      inputRepeatDays.length === 7 && styles.presetChipActive,
-                    ]}
-                    onPress={() => setInputRepeatDays([0, 1, 2, 3, 4, 5, 6])}
-                  >
-                    <Text
+                      <Text
+                        style={[
+                          styles.presetChipText,
+                          inputRepeatDays.length === 2 &&
+                            [5, 6].every((d) => inputRepeatDays.includes(d)) &&
+                            styles.presetChipTextActive,
+                        ]}
+                      >
+                        Cuối tuần
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={[
-                        styles.presetChipText,
-                        inputRepeatDays.length === 7 &&
-                          styles.presetChipTextActive,
+                        styles.presetChip,
+                        inputRepeatDays.length === 7 && styles.presetChipActive,
                       ]}
+                      onPress={() => setInputRepeatDays([0, 1, 2, 3, 4, 5, 6])}
                     >
-                      Hàng ngày
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                      <Text
+                        style={[
+                          styles.presetChipText,
+                          inputRepeatDays.length === 7 &&
+                            styles.presetChipTextActive,
+                        ]}
+                      >
+                        Hàng ngày
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={handleCloseAddModal}
-                  >
-                    <Text style={styles.cancelBtnText}>Hủy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.confirmBtn}
-                    onPress={handleSaveAlarm}
-                  >
-                    <Text style={styles.confirmBtnText}>
-                      {editingAlarmId ? 'Lưu thay đổi' : 'Lưu báo thức'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={styles.cancelBtn}
+                      onPress={handleCloseAddModal}
+                    >
+                      <Text style={styles.cancelBtnText}>Hủy</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.confirmBtn}
+                      onPress={handleSaveAlarm}
+                    >
+                      <Text style={styles.confirmBtnText}>
+                        {editingAlarmId ? 'Lưu thay đổi' : 'Lưu báo thức'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
 
-            {/* Form for Reminders */}
-            {subTab === 'reminders' && (
-              <>
-                <Text style={styles.modalTitle}>🔔 Thêm lời nhắc mới</Text>
+              {/* Form for Reminders */}
+              {subTab === 'reminders' && (
+                <>
+                  <Text style={styles.modalTitle}>🔔 Thêm lời nhắc mới</Text>
 
-                <Text style={styles.inputLabel}>Nội dung lời nhắc</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={inputReminderTitle}
-                  onChangeText={setInputReminderTitle}
-                  placeholder="Uống nước, đi họp, tắt bếp..."
-                  placeholderTextColor={Colors.textMuted}
-                />
+                  <Text style={styles.inputLabel}>Nội dung lời nhắc</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={inputReminderTitle}
+                    onChangeText={setInputReminderTitle}
+                    placeholder="Uống nước, đi họp, tắt bếp..."
+                    placeholderTextColor={Colors.textMuted}
+                  />
 
-                <Text style={styles.inputLabel}>Giờ nhắc (HH:mm)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={inputReminderTime}
-                  onChangeText={setInputReminderTime}
-                  placeholder="15:30"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={5}
-                />
+                  <TimePicker
+                    value={inputReminderTime}
+                    onChange={setInputReminderTime}
+                    mode="reminder"
+                    label="Giờ nhắc việc"
+                  />
 
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={() => setShowAddModal(false)}
-                  >
-                    <Text style={styles.cancelBtnText}>Hủy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.confirmBtn, { backgroundColor: Colors.secondary }]}
-                    onPress={handleSaveReminder}
-                  >
-                    <Text style={[styles.confirmBtnText, { color: '#070810' }]}>
-                      Lưu lời nhắc
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={styles.cancelBtn}
+                      onPress={() => setShowAddModal(false)}
+                    >
+                      <Text style={styles.cancelBtnText}>Hủy</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.confirmBtn, { backgroundColor: Colors.secondary }]}
+                      onPress={handleSaveReminder}
+                    >
+                      <Text style={[styles.confirmBtnText, { color: '#070810' }]}>
+                        Lưu lời nhắc
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
 
-            {/* Form for Todos */}
-            {subTab === 'todos' && (
-              <>
-                <Text style={styles.modalTitle}>✅ Thêm việc cần làm</Text>
+              {/* Form for Todos */}
+              {subTab === 'todos' && (
+                <>
+                  <Text style={styles.modalTitle}>✅ Thêm việc cần làm</Text>
 
-                <Text style={styles.inputLabel}>Nội dung công việc</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={inputTodoTitle}
-                  onChangeText={setInputTodoTitle}
-                  placeholder="Mua tài liệu, dọn bàn làm việc..."
-                  placeholderTextColor={Colors.textMuted}
-                />
+                  <Text style={styles.inputLabel}>Nội dung công việc</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={inputTodoTitle}
+                    onChangeText={setInputTodoTitle}
+                    placeholder="Mua tài liệu, dọn bàn làm việc..."
+                    placeholderTextColor={Colors.textMuted}
+                  />
 
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={() => setShowAddModal(false)}
-                  >
-                    <Text style={styles.cancelBtnText}>Hủy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.confirmBtn, { backgroundColor: Colors.success }]}
-                    onPress={handleSaveTodo}
-                  >
-                    <Text style={styles.confirmBtnText}>Thêm vào To-do</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={styles.cancelBtn}
+                      onPress={() => setShowAddModal(false)}
+                    >
+                      <Text style={styles.cancelBtnText}>Hủy</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.confirmBtn, { backgroundColor: Colors.success }]}
+                      onPress={handleSaveTodo}
+                    >
+                      <Text style={styles.confirmBtnText}>Thêm vào To-do</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1332,11 +1330,15 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
+    maxHeight: '88%',
     backgroundColor: Colors.surface,
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  modalScroll: {
+    paddingBottom: 8,
   },
   modalTitle: {
     ...Typography.titleLarge,
