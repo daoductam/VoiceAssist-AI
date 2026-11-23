@@ -69,7 +69,8 @@ export class VietnameseTimeParser {
     if (!text) return null;
     const normalized = text.toLowerCase().trim();
 
-    // Patterns like: "6h30", "06:30", "6 giờ 30", "6 rưỡi"
+    // Patterns like: "6h30", "06:30", "6 giờ 30", "6 rưỡi", "7 giờ kém 15"
+    const kemRegex = /(\d{1,2})\s*(?:giờ|h)\s*(?:kém|kem)\s*(\d{1,2})\s*(?:phút|p)?/i;
     const hourMinuteRegex =
       /(\d{1,2})(?:[:h]| giờ )(\d{1,2})?(?:\s*(phút|p))?/;
     const halfRegex = /(\d{1,2})\s*(?:giờ|h)?\s*(?:rưỡi|ruoi)/;
@@ -77,21 +78,32 @@ export class VietnameseTimeParser {
 
     let hours: number | null = null;
     let minutes = 0;
+    let isKem = false;
+    let minusMinutes = 0;
 
-    const halfMatch = normalized.match(halfRegex);
-    if (halfMatch) {
-      hours = parseInt(halfMatch[1], 10);
-      minutes = 30;
+    const kemMatch = normalized.match(kemRegex);
+    if (kemMatch) {
+      hours = parseInt(kemMatch[1], 10);
+      minusMinutes = parseInt(kemMatch[2], 10);
+      if (minusMinutes > 0 && minusMinutes < 60) {
+        isKem = true;
+      }
     } else {
-      const hmMatch = normalized.match(hourMinuteRegex);
-      if (hmMatch) {
-        hours = parseInt(hmMatch[1], 10);
-        minutes = hmMatch[2] ? parseInt(hmMatch[2], 10) : 0;
+      const halfMatch = normalized.match(halfRegex);
+      if (halfMatch) {
+        hours = parseInt(halfMatch[1], 10);
+        minutes = 30;
       } else {
-        const hMatch = normalized.match(hourOnlyRegex);
-        if (hMatch) {
-          hours = parseInt(hMatch[1], 10);
-          minutes = 0;
+        const hmMatch = normalized.match(hourMinuteRegex);
+        if (hmMatch) {
+          hours = parseInt(hmMatch[1], 10);
+          minutes = hmMatch[2] ? parseInt(hmMatch[2], 10) : 0;
+        } else {
+          const hMatch = normalized.match(hourOnlyRegex);
+          if (hMatch) {
+            hours = parseInt(hMatch[1], 10);
+            minutes = 0;
+          }
         }
       }
     }
@@ -107,9 +119,16 @@ export class VietnameseTimeParser {
     const isMorning = normalized.includes('sáng');
     const isNoon = normalized.includes('trưa');
 
-    if (isAfternoon || isEvening || isNight) {
+    if (isAfternoon || isEvening) {
       // e.g. "3 giờ chiều" -> 15:00, "8 giờ tối" -> 20:00
       if (hours < 12) {
+        hours += 12;
+      }
+    } else if (isNight) {
+      // e.g. "12 giờ đêm" -> 00:00, "11 giờ đêm" -> 23:00
+      if (hours === 12) {
+        hours = 0;
+      } else if (hours < 12) {
         hours += 12;
       }
     } else if (isMorning) {
@@ -121,6 +140,12 @@ export class VietnameseTimeParser {
       if (hours < 11) {
         hours += 12;
       }
+    }
+
+    if (isKem) {
+      // e.g. 7 giờ kém 15 -> (7 - 1) = 6:45; 12 giờ đêm (00:00) kém 15 -> 23:45
+      hours = (hours - 1 + 24) % 24;
+      minutes = 60 - minusMinutes;
     }
 
     // Validation

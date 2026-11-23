@@ -7,6 +7,8 @@ import { actionRouter, ActionRouteOutput } from './action_router';
 import { alarmService } from '@domain/services/alarm_service';
 import { reminderService } from '@domain/services/reminder_service';
 import { todoService } from '@domain/services/todo_service';
+import { useDialogueStore } from '@shared/stores/useDialogueStore';
+import { vietnameseTimeParser } from '@core/utils/vietnamese_time_parser';
 
 export interface VoiceResult extends ActionRouteOutput {
   transcription: string;
@@ -67,6 +69,93 @@ export class VoicePipeline {
           actionTaken: false,
           intent: 'unknown',
         };
+      }
+
+      // 1.1 Record user utterance to dialogue history
+      useDialogueStore.getState().addChatTurn('user', transcription);
+
+      // 1.2 Check cancellation intent
+      const cancelKeywords =
+        /^(?:thôi|hủy|hủy bỏ|bỏ qua|không cần|thôi không đặt nữa|dừng lại|thôi khỏi|thôi bỏ đi)[.!?,]*$/i;
+      if (cancelKeywords.test(transcription.trim())) {
+        useDialogueStore.getState().cancelSession();
+        const cancelMsg = 'Dạ, mình đã hủy yêu cầu vừa rồi cho bạn rồi nhé!';
+        if (ttsEnabled) {
+          onSpeechStateChange?.('speaking');
+          try {
+            await ttsService.speak(cancelMsg);
+          } finally {
+            onSpeechStateChange?.('idle');
+          }
+        }
+        useDialogueStore.getState().addChatTurn('assistant', cancelMsg);
+        return {
+          transcription,
+          responseText: cancelMsg,
+          actionTaken: false,
+          intent: 'cancel',
+        };
+      }
+
+      // 1.3 Check active SlotFillingSession
+      const activeSession = useDialogueStore.getState().activeSession;
+      if (activeSession && Date.now() <= activeSession.expiresAt) {
+        let filledEntities: Record<string, string> | null = null;
+
+        if (activeSession.missingSlot === 'time') {
+          const parsed = vietnameseTimeParser.parse(transcription, new Date(), {
+            rollPastTimeToTomorrow: false,
+          });
+          const parsedOfDay = vietnameseTimeParser.parseTimeOfDay(transcription);
+          let timeVal: string | null = null;
+          let targetDateVal: string | null = null;
+
+          if (parsed) {
+            timeVal = vietnameseTimeParser.formatTime24h(parsed);
+            targetDateVal = parsed.toISOString();
+          } else if (parsedOfDay) {
+            const h = String(parsedOfDay.hours).padStart(2, '0');
+            const m = String(parsedOfDay.minutes).padStart(2, '0');
+            timeVal = `${h}:${m}`;
+          }
+
+          if (timeVal) {
+            filledEntities = useDialogueStore.getState().fillSlot('time', timeVal);
+            if (filledEntities && targetDateVal) {
+              filledEntities.targetDate = targetDateVal;
+            }
+          }
+        } else if (activeSession.missingSlot === 'title') {
+          const rawTitle = transcription
+            .replace(/^(?:là|về việc|nhắc|cần|phải)\s+/i, '')
+            .trim();
+          if (rawTitle.length > 0) {
+            filledEntities = useDialogueStore.getState().fillSlot('title', rawTitle);
+          }
+        }
+
+        if (filledEntities) {
+          console.log(`[VoicePipeline] Slot-filling completed for ${activeSession.intent}:`, filledEntities);
+          const followUpResult = await actionRouter.route({
+            userInput: transcription,
+            intent: activeSession.intent,
+            entities: filledEntities,
+            tone,
+            isOffline: false,
+            signal,
+          });
+
+          if (ttsEnabled && followUpResult.responseText) {
+            onSpeechStateChange?.('speaking');
+            try {
+              await ttsService.speak(followUpResult.responseText);
+            } finally {
+              onSpeechStateChange?.('idle');
+            }
+          }
+          useDialogueStore.getState().addChatTurn('assistant', followUpResult.responseText);
+          return { transcription, ...followUpResult };
+        }
       }
 
       const compoundCommands = ruleBasedParser.parseMultiple(transcription);
@@ -154,6 +243,7 @@ export class VoicePipeline {
 
       if (isFastPath) {
         // FAST-PATH: Instant local execution (10-20ms)
+        console.log(`[VoicePipeline] Executing FAST-PATH: intent=${offlineParsed.intent}`);
         routeResult = await actionRouter.route({
           userInput: transcription,
           intent: offlineParsed.intent,
@@ -164,6 +254,7 @@ export class VoicePipeline {
         });
       } else {
         // SMART-PATH: Online Groq LLM with Context-Aware Function Calling
+        console.log(`[VoicePipeline] Executing SMART-PATH via Groq LLM for: "${transcription}"`);
         try {
           let contextSnapshot: UserContextSnapshot | undefined;
           try {
@@ -280,6 +371,7 @@ export class VoicePipeline {
           }
         } catch (error) {
           if (signal.aborted) throw error;
+          console.warn('[VoicePipeline] Online LLM error, falling back to offline NLU:', error);
           routeResult = await actionRouter.route({
             userInput: transcription,
             intent: offlineParsed.intent,
@@ -302,6 +394,7 @@ export class VoicePipeline {
         }
       }
 
+      useDialogueStore.getState().addChatTurn('assistant', routeResult.responseText);
       this.throwIfAborted(signal);
       return { transcription, ...routeResult };
     } finally {

@@ -143,7 +143,7 @@ export class RuleBasedParser implements IntentParser {
 
     // Remove time and date details before stripping the command keywords.
     cleaned = cleaned.replace(
-      /(?:lúc|vào|sau)\s+\d{1,2}(?:(?:[:h]\s*\d{1,2})|(?:\s*giờ(?:\s*\d{1,2})?))(?:\s*(?:phút|p|sáng|chiều|tối|đêm|trưa))?/gi,
+      /(?:lúc|vào|sau)\s+\d{1,2}(?:(?:[:h]\s*\d{1,2})|(?:\s*(?:giờ|h)(?:\s*(?:kém|kem)\s*\d{1,2}|\s*\d{1,2})?))(?:\s*(?:phút|p|sáng|chiều|tối|đêm|trưa))?/gi,
       ''
     );
     cleaned = cleaned.replace(/\b\d{1,2}\s*(?:phút|tiếng|giờ)\s*(?:nữa|sau)?/gi, '');

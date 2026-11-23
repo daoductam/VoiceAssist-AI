@@ -74,6 +74,70 @@ export class ResponseGenerator {
   }
 
   /**
+   * Generates a natural question asking for missing required parameters (Slot-Filling)
+   */
+  generateMissingSlotPrompt(
+    intent: 'setAlarm' | 'setReminder' | 'addTodo',
+    missingSlot: 'time' | 'title',
+    tone: ToneStyle = 'cute',
+    context?: { title?: string; time?: string }
+  ): string {
+    if (intent === 'setAlarm' && missingSlot === 'time') {
+      switch (tone) {
+        case 'friendly':
+          return 'Bạn muốn mình đặt báo thức lúc mấy giờ nè?';
+        case 'professional':
+          return 'Vui lòng cho biết thời gian bạn muốn đặt báo thức.';
+        case 'cute':
+        default:
+          return 'Chủ nhân ơi, mình đặt chuông báo thức lúc mấy giờ đây ạ? ✨';
+      }
+    }
+
+    if (intent === 'setReminder') {
+      if (missingSlot === 'time') {
+        const item = context?.title ? ` "${context.title}"` : '';
+        switch (tone) {
+          case 'friendly':
+            return `Bạn muốn mình nhắc${item} lúc mấy giờ hoặc sau bao nhiêu phút nữa nè?`;
+          case 'professional':
+            return `Vui lòng cho biết thời gian cụ thể bạn muốn nhận lời nhắc${item}.`;
+          case 'cute':
+          default:
+            return `Nhắc bạn${item} lúc mấy giờ nè, nói cho mình biết với nha~ 🌸`;
+        }
+      }
+
+      if (missingSlot === 'title') {
+        const atTime = context?.time ? ` lúc ${context.time}` : '';
+        switch (tone) {
+          case 'friendly':
+            return `Bạn muốn mình nhắc việc gì${atTime} thế bạn?`;
+          case 'professional':
+            return `Vui lòng cung cấp nội dung bạn muốn được nhắc${atTime}.`;
+          case 'cute':
+          default:
+            return `${atTime ? atTime : 'Lúc đó'} bạn cần mình nhắc việc gì nè chủ nhân ơi? ✨`;
+        }
+      }
+    }
+
+    if (intent === 'addTodo' && missingSlot === 'title') {
+      switch (tone) {
+        case 'friendly':
+          return 'Bạn muốn thêm công việc gì vào danh sách cần làm nè?';
+        case 'professional':
+          return 'Vui lòng cung cấp nội dung công việc bạn muốn thêm.';
+        case 'cute':
+        default:
+          return 'Chủ nhân muốn thêm việc gì vào danh sách nè? Để mình ghi lại cho nha! 📝';
+      }
+    }
+
+    return 'Bạn nói rõ thêm thông tin giúp mình nhé!';
+  }
+
+  /**
    * Generates rich title, notification body, and spoken voice text for an Alarm
    * Adapts dynamically based on time of day (morning, afternoon, evening, night) and tone.
    */

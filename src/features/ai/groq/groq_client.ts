@@ -1,6 +1,7 @@
 import { APP_CONSTANTS } from '@core/constants';
 import * as SecureStore from 'expo-secure-store';
 import { ToneStyle } from '@domain/enums';
+import { useDialogueStore } from '@shared/stores/useDialogueStore';
 
 export interface ToolCallResult {
   toolName:
@@ -256,6 +257,18 @@ Quy tắc xử lý:
 8. Khi người dùng hỏi thời gian ("mấy giờ rồi", "hôm nay ngày mấy"): Hãy trả lời thời gian thực hiện tại là ${timeString}, ${dateString}.
 Trả lời ngắn gọn, ấm áp và tự nhiên. Tuyệt đối không nhắc đến tên code hay function.`;
 
+    const recentTurns = useDialogueStore.getState().recentTurns;
+    const historyMessages = recentTurns.map((turn) => ({
+      role: turn.role,
+      content: turn.content,
+    }));
+
+    const conversationMessages = [
+      { role: 'system', content: systemPrompt },
+      ...historyMessages,
+      { role: 'user', content: userInput },
+    ];
+
     let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -264,10 +277,7 @@ Trả lời ngắn gọn, ấm áp và tự nhiên. Tuyệt đối không nhắc
       },
       body: JSON.stringify({
         model: APP_CONSTANTS.GROQ_LLM_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userInput },
-        ],
+        messages: conversationMessages,
         tools: GROQ_TOOLS,
         tool_choice: 'auto',
         temperature: 0.1,
@@ -288,10 +298,7 @@ Trả lời ngắn gọn, ấm áp và tự nhiên. Tuyệt đối không nhắc
         },
         body: JSON.stringify({
           model: APP_CONSTANTS.GROQ_LLM_FAST_MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userInput },
-          ],
+          messages: conversationMessages,
           tools: GROQ_TOOLS,
           tool_choice: 'auto',
           temperature: 0.1,

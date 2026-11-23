@@ -34,6 +34,15 @@ export class TodoDao {
     return rows.map(mapRowToTodo);
   }
 
+  async findByTitleLike(titlePattern: string): Promise<Todo[]> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<TodoRow>(
+      'SELECT * FROM todos WHERE title LIKE ? ORDER BY is_done ASC, created_at DESC;',
+      [`%${titlePattern}%`]
+    );
+    return rows.map(mapRowToTodo);
+  }
+
   async insert(todo: Todo): Promise<void> {
     const db = await getDatabase();
     await db.runAsync(

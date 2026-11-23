@@ -23,7 +23,15 @@ export class TodoService {
   }
 
   async findByTitle(title: string): Promise<Todo[]> {
-    const normalizedTitle = normalize(this.validateTitle(title));
+    const rawValidated = this.validateTitle(title);
+    const normalizedTitle = normalize(rawValidated);
+    const candidates = await todoDao.findByTitleLike(rawValidated);
+    if (candidates.length > 0) {
+      const matched = candidates.filter(
+        (todo) => normalize(todo.title) === normalizedTitle
+      );
+      if (matched.length > 0) return matched;
+    }
     return (await todoDao.getAll()).filter(
       (todo) => normalize(todo.title) === normalizedTitle
     );

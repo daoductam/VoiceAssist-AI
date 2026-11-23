@@ -8,6 +8,7 @@ import { conversationLogDao } from '@data/daos/conversation_log_dao';
 import { vietnameseTimeParser } from '@core/utils/vietnamese_time_parser';
 import { ValidationException } from '@core/exceptions/app_exception';
 import { useTodoStore } from '@shared/stores/useTodoStore';
+import { useDialogueStore } from '@shared/stores/useDialogueStore';
 
 export interface ActionRouteInput {
   userInput: string;
@@ -23,6 +24,7 @@ export interface ActionRouteOutput {
   responseText: string;
   actionTaken: boolean;
   intent: string;
+  isAwaitingFollowUp?: boolean;
 }
 
 export class ActionRouter {
@@ -74,7 +76,36 @@ export class ActionRouter {
           }
 
           if (!time) {
-            time = '07:00';
+            const parsedTimeOfDay = vietnameseTimeParser.parseTimeOfDay(input.userInput);
+            if (parsedTimeOfDay) {
+              const h = String(parsedTimeOfDay.hours).padStart(2, '0');
+              const m = String(parsedTimeOfDay.minutes).padStart(2, '0');
+              time = `${h}:${m}`;
+            }
+          }
+
+          // Slot-Filling: If still no time specified, ask user for missing time!
+          if (!time) {
+            const promptQuestion = responseGenerator.generateMissingSlotPrompt(
+              'setAlarm',
+              'time',
+              input.tone
+            );
+            useDialogueStore.getState().startSlotFilling({
+              intent: 'setAlarm',
+              missingSlot: 'time',
+              collectedEntities: {
+                label: input.entities.label || input.entities.title || 'Báo thức',
+                repeatDays: input.entities.repeatDays || '',
+              },
+              promptQuestion,
+            });
+            return {
+              responseText: promptQuestion,
+              actionTaken: false,
+              intent: 'setAlarm',
+              isAwaitingFollowUp: true,
+            };
           }
 
           const label =
@@ -85,6 +116,8 @@ export class ActionRouter {
             label,
             repeatDays,
           });
+
+          useDialogueStore.getState().cancelSession();
 
           responseText = responseGenerator.generate({
             tone: input.tone,
@@ -122,18 +155,92 @@ export class ActionRouter {
         }
 
         case 'setReminder': {
-          const title = input.entities.title || input.entities.task || 'Lời nhắc mới';
+          const rawTitle = input.entities.title || input.entities.task;
           let remindAt = input.entities.targetDate;
 
           if (!remindAt) {
             const parsedDate = vietnameseTimeParser.parse(input.userInput);
-            remindAt = parsedDate
-              ? parsedDate.toISOString()
+            if (parsedDate) {
+              remindAt = parsedDate.toISOString();
+            }
+          }
+
+          const hasValidTitle =
+            rawTitle &&
+            rawTitle.trim().length > 0 &&
+            rawTitle.trim() !== 'Lời nhắc mới' &&
+            rawTitle.trim() !== 'Nhắc nhở mới';
+
+          // 1. Slot-Filling: Check if time is missing
+          if (!remindAt && !input.entities.time) {
+            const titleForPrompt = hasValidTitle ? rawTitle.trim() : undefined;
+            const promptQuestion = responseGenerator.generateMissingSlotPrompt(
+              'setReminder',
+              'time',
+              input.tone,
+              { title: titleForPrompt }
+            );
+            useDialogueStore.getState().startSlotFilling({
+              intent: 'setReminder',
+              missingSlot: 'time',
+              collectedEntities: {
+                title: titleForPrompt || '',
+              },
+              promptQuestion,
+            });
+            return {
+              responseText: promptQuestion,
+              actionTaken: false,
+              intent: 'setReminder',
+              isAwaitingFollowUp: true,
+            };
+          }
+
+          // 2. Slot-Filling: Check if title is missing
+          if (!hasValidTitle) {
+            let timeFormatted = '';
+            if (remindAt) {
+              timeFormatted = new Date(remindAt).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+            } else if (input.entities.time) {
+              timeFormatted = input.entities.time;
+            }
+            const promptQuestion = responseGenerator.generateMissingSlotPrompt(
+              'setReminder',
+              'title',
+              input.tone,
+              { time: timeFormatted }
+            );
+            useDialogueStore.getState().startSlotFilling({
+              intent: 'setReminder',
+              missingSlot: 'title',
+              collectedEntities: {
+                targetDate: remindAt || '',
+                time: timeFormatted,
+              },
+              promptQuestion,
+            });
+            return {
+              responseText: promptQuestion,
+              actionTaken: false,
+              intent: 'setReminder',
+              isAwaitingFollowUp: true,
+            };
+          }
+
+          const title = rawTitle.trim();
+          if (!remindAt && input.entities.time) {
+            const parsed = vietnameseTimeParser.parse(input.entities.time);
+            remindAt = parsed
+              ? parsed.toISOString()
               : new Date(Date.now() + 15 * 60 * 1000).toISOString();
           }
 
           this.throwIfAborted(input.signal);
-          const newReminder = await reminderService.create({ title, remindAt });
+          const newReminder = await reminderService.create({ title, remindAt: remindAt! });
+          useDialogueStore.getState().cancelSession();
           const timeFormatted = new Date(newReminder.remindAt).toLocaleTimeString(
             'vi-VN',
             { hour: '2-digit', minute: '2-digit' }
@@ -152,10 +259,37 @@ export class ActionRouter {
         }
 
         case 'addTodo': {
-          const rawTitle = input.entities.title || input.entities.task || 'Công việc mới';
+          const rawTitle = input.entities.title || input.entities.task;
+          const hasValidTitle =
+            rawTitle &&
+            rawTitle.trim().length > 0 &&
+            rawTitle.trim() !== 'Công việc mới' &&
+            rawTitle.trim() !== 'Việc mới';
+
+          if (!hasValidTitle) {
+            const promptQuestion = responseGenerator.generateMissingSlotPrompt(
+              'addTodo',
+              'title',
+              input.tone
+            );
+            useDialogueStore.getState().startSlotFilling({
+              intent: 'addTodo',
+              missingSlot: 'title',
+              collectedEntities: {},
+              promptQuestion,
+            });
+            return {
+              responseText: promptQuestion,
+              actionTaken: false,
+              intent: 'addTodo',
+              isAwaitingFollowUp: true,
+            };
+          }
+
           const title = rawTitle.charAt(0).toLocaleUpperCase('vi-VN') + rawTitle.slice(1);
           this.throwIfAborted(input.signal);
           const newTodo = await todoService.create({ title });
+          useDialogueStore.getState().cancelSession();
 
           responseText = responseGenerator.generate({
             tone: input.tone,

@@ -1,7 +1,7 @@
 # 🎙️ VoiceAssist AI — Trợ lý Báo thức & Lời nhắc Thông minh Tiếng Việt
 
 <p align="center">
-  <img src="https://img.shields.io/badge/React%20Native-Expo%20SDK%2052-6366F1?style=for-the-badge&logo=react&logoColor=white" alt="React Native Expo" />
+  <img src="https://img.shields.io/badge/React%20Native-Expo%20SDK%2058-6366F1?style=for-the-badge&logo=react&logoColor=white" alt="React Native Expo" />
   <img src="https://img.shields.io/badge/TypeScript-Strict%20Mode-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Groq%20AI-Llama%203.3%20%2B%20Whisper-F55036?style=for-the-badge&logo=groq&logoColor=white" alt="Groq" />
   <img src="https://img.shields.io/badge/UI%20Theme-Midnight%20Synapse-38BDF8?style=for-the-badge" alt="Midnight Synapse" />
@@ -138,6 +138,18 @@ npm run android
 npm run ios
 ```
 Quét mã QR hiển thị trên Terminal bằng camera điện thoại (iOS) hoặc ứng dụng **Expo Go** (Android) để trải nghiệm ứng dụng ngay lập tức!
+
+### 5. Kiểm thử tự động (Automated Test Suite)
+Dự án đi kèm bộ kiểm thử tự động toàn diện kiểm tra cả logic phân tích ngôn ngữ tự nhiên (NLU/Time parser/Multi-turn Dialogue) lẫn cơ chế đặt chuông Android Native:
+```bash
+# Chạy toàn bộ 47 ca kiểm thử tự động
+npm test
+
+# Hoặc chạy riêng lẻ từng bộ kiểm thử:
+npm run test:nlu     # 38 test cases: NLU, bóc tách giờ kém, đa lệnh & hội thoại đa lượt Slot-Filling
+npm run test:alarm   # 9 test cases: Android Native Alarm Bridge, Doze mode & notifications
+npm run typecheck    # Kiểm tra TypeScript Strict Mode (0 errors)
+```
 
 ---
 
