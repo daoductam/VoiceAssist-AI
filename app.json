@@ -47,7 +47,8 @@
       "expo-secure-store",
       "expo-audio",
       "expo-notifications",
-      "./plugins/withAndroidAlarm"
+      "./plugins/withAndroidAlarm",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {

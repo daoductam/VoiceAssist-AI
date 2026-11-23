@@ -269,73 +269,91 @@ Trả lời ngắn gọn, ấm áp và tự nhiên. Tuyệt đối không nhắc
       { role: 'user', content: userInput },
     ];
 
-    let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: APP_CONSTANTS.GROQ_LLM_MODEL,
-        messages: conversationMessages,
-        tools: GROQ_TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.1,
-      }),
-      signal,
-    });
+    const timeoutMs = 7000;
+    const timeoutController = new AbortController();
+    const timeoutTimer = setTimeout(() => {
+      timeoutController.abort(new Error('Groq API timeout sau 7s. Chuyển sang xử lý offline.'));
+    }, timeoutMs);
 
-    // Fallback to fast model if primary model fails
-    if (!response.ok) {
-      console.warn(
-        `Primary LLM (${APP_CONSTANTS.GROQ_LLM_MODEL}) failed (${response.status}), falling back to ${APP_CONSTANTS.GROQ_LLM_FAST_MODEL}`
-      );
-      response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
+    const onParentAbort = () => timeoutController.abort();
+    if (signal) {
+      signal.addEventListener('abort', onParentAbort, { once: true });
+    }
+
+    try {
+      let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: APP_CONSTANTS.GROQ_LLM_FAST_MODEL,
+          model: APP_CONSTANTS.GROQ_LLM_MODEL,
           messages: conversationMessages,
           tools: GROQ_TOOLS,
           tool_choice: 'auto',
           temperature: 0.1,
         }),
-        signal,
+        signal: timeoutController.signal,
       });
-    }
 
-    if (!response.ok) {
-      throw new Error(`Groq LLM Error (${response.status})`);
-    }
-
-    const data = await response.json();
-    if (signal?.aborted) throw new Error('Yêu cầu đã bị hủy.');
-    const choice = data.choices?.[0]?.message;
-
-    if (choice?.tool_calls && choice.tool_calls.length > 0) {
-      const call = choice.tool_calls[0];
-      const fnName = call.function.name as ToolCallResult['toolName'];
-      let parsedArgs: Record<string, string> = {};
-      try {
-        parsedArgs = JSON.parse(call.function.arguments || '{}');
-      } catch {
-        parsedArgs = {};
+      // Fallback to fast model if primary model fails
+      if (!response.ok) {
+        console.warn(
+          `Primary LLM (${APP_CONSTANTS.GROQ_LLM_MODEL}) failed (${response.status}), falling back to ${APP_CONSTANTS.GROQ_LLM_FAST_MODEL}`
+        );
+        response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: APP_CONSTANTS.GROQ_LLM_FAST_MODEL,
+            messages: conversationMessages,
+            tools: GROQ_TOOLS,
+            tool_choice: 'auto',
+            temperature: 0.1,
+          }),
+          signal: timeoutController.signal,
+        });
       }
-      return {
-        toolName: fnName,
-        parameters: parsedArgs,
-        message: choice.content || '',
-      };
-    }
 
-    return {
-      toolName: 'none',
-      parameters: {},
-      message: choice?.content || '',
-    };
+      if (!response.ok) {
+        throw new Error(`Groq LLM Error (${response.status})`);
+      }
+
+      const data = await response.json();
+      if (signal?.aborted) throw new Error('Yêu cầu đã bị hủy.');
+      const choice = data.choices?.[0]?.message;
+
+      if (choice?.tool_calls && choice.tool_calls.length > 0) {
+        const call = choice.tool_calls[0];
+        const fnName = call.function.name as ToolCallResult['toolName'];
+        let parsedArgs: Record<string, string> = {};
+        try {
+          parsedArgs = JSON.parse(call.function.arguments || '{}');
+        } catch {
+          parsedArgs = {};
+        }
+        return {
+          toolName: fnName,
+          parameters: parsedArgs,
+          message: choice.content || '',
+        };
+      }
+
+      return {
+        toolName: 'none',
+        parameters: {},
+        message: choice?.content || '',
+      };
+    } finally {
+      clearTimeout(timeoutTimer);
+      if (signal) {
+        signal.removeEventListener('abort', onParentAbort);
+      }
+    }
   }
 }
 

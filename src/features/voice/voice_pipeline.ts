@@ -53,26 +53,68 @@ export class VoicePipeline {
       const transcription = await sttService.stopRecordingAndTranscribe(signal);
       this.throwIfAborted(signal);
 
-      if (!transcription || transcription.trim().length === 0) {
-        const emptyResponse = 'Tôi chưa nghe rõ bạn nói gì, bạn nói lại giúp tôi nhé!';
-        if (ttsEnabled) {
-          onSpeechStateChange?.('speaking');
-          try {
-            await ttsService.speak(emptyResponse);
-          } finally {
-            onSpeechStateChange?.('idle');
-          }
-        }
-        return {
-          transcription: '',
-          responseText: emptyResponse,
-          actionTaken: false,
-          intent: 'unknown',
-        };
-      }
+      return await this.processTranscription(
+        transcription,
+        tone,
+        ttsEnabled,
+        onSpeechStateChange,
+        signal
+      );
+    } finally {
+      if (this.activeController === controller) this.activeController = null;
+    }
+  }
 
-      // 1.1 Record user utterance to dialogue history
-      useDialogueStore.getState().addChatTurn('user', transcription);
+  async processText(
+    text: string,
+    tone: ToneStyle = 'cute'
+  ): Promise<VoiceResult> {
+    const controller = new AbortController();
+    this.activeController = controller;
+    try {
+      return await this.processTranscription(
+        text,
+        tone,
+        false,
+        undefined,
+        controller.signal
+      );
+    } finally {
+      if (this.activeController === controller) this.activeController = null;
+    }
+  }
+
+  private async processTranscription(
+    transcription: string,
+    tone: ToneStyle = 'cute',
+    ttsEnabled: boolean = true,
+    onSpeechStateChange?: (state: 'speaking' | 'idle') => void,
+    signal?: AbortSignal
+  ): Promise<VoiceResult> {
+    const checkAborted = () => {
+      if (signal) this.throwIfAborted(signal);
+    };
+
+    if (!transcription || transcription.trim().length === 0) {
+      const emptyResponse = 'Tôi chưa nghe rõ bạn nói gì, bạn nói lại giúp tôi nhé!';
+      if (ttsEnabled) {
+        onSpeechStateChange?.('speaking');
+        try {
+          await ttsService.speak(emptyResponse);
+        } finally {
+          onSpeechStateChange?.('idle');
+        }
+      }
+      return {
+        transcription: '',
+        responseText: emptyResponse,
+        actionTaken: false,
+        intent: 'unknown',
+      };
+    }
+
+    // 1.1 Record user utterance to dialogue history
+    useDialogueStore.getState().addChatTurn('user', transcription);
 
       // 1.2 Check cancellation intent
       const cancelKeywords =
@@ -370,7 +412,7 @@ export class VoicePipeline {
             });
           }
         } catch (error) {
-          if (signal.aborted) throw error;
+          if (signal?.aborted) throw error;
           console.warn('[VoicePipeline] Online LLM error, falling back to offline NLU:', error);
           routeResult = await actionRouter.route({
             userInput: transcription,
@@ -397,9 +439,6 @@ export class VoicePipeline {
       useDialogueStore.getState().addChatTurn('assistant', routeResult.responseText);
       this.throwIfAborted(signal);
       return { transcription, ...routeResult };
-    } finally {
-      if (this.activeController === controller) this.activeController = null;
-    }
   }
 
   async speak(text: string): Promise<void> {
@@ -418,8 +457,8 @@ export class VoicePipeline {
     await ttsService.resume();
   }
 
-  private throwIfAborted(signal: AbortSignal): void {
-    if (!signal.aborted) return;
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (!signal?.aborted) return;
     const error = new Error('Yêu cầu đã bị hủy.');
     error.name = 'AbortError';
     throw error;

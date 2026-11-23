@@ -6,17 +6,26 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Colors } from '@core/theme/colors';
 import { Typography } from '@core/theme/typography';
 import { conversationLogDao } from '@data/daos/conversation_log_dao';
 import { ConversationLog } from '@domain/entities';
 import { ttsService } from '@features/voice/tts_service';
-import { Volume2, Sparkles, User, Bot, WifiOff } from 'lucide-react-native';
+import { voicePipeline } from '@features/voice/voice_pipeline';
+import { useSettingsStore } from '@shared/stores/useSettingsStore';
+import { Volume2, Sparkles, User, Bot, WifiOff, Send } from 'lucide-react-native';
 
 export const ChatScreen: React.FC = () => {
   const [logs, setLogs] = useState<ConversationLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const { toneStyle } = useSettingsStore();
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -37,6 +46,21 @@ export const ChatScreen: React.FC = () => {
     setRefreshing(false);
   };
 
+  const handleSend = async () => {
+    const trimmed = inputText.trim();
+    if (!trimmed || isSending) return;
+    setInputText('');
+    setIsSending(true);
+    try {
+      await voicePipeline.processText(trimmed, toneStyle);
+      await fetchLogs();
+    } catch (err) {
+      console.error('Failed to process text command', err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleReplay = (text: string) => {
     ttsService.speak(text);
   };
@@ -54,86 +78,127 @@ export const ChatScreen: React.FC = () => {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={Colors.primary}
-        />
-      }
+    <KeyboardAvoidingView
+      style={styles.keyboardContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <Text style={styles.screenTitle}>Nhật ký Hội thoại AI</Text>
-      <Text style={styles.screenSub}>Lịch sử tương tác và câu lệnh giọng nói</Text>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+          />
+        }
+      >
+        <Text style={styles.screenTitle}>Nhật ký Hội thoại AI</Text>
+        <Text style={styles.screenSub}>Lịch sử tương tác và câu lệnh giọng nói</Text>
 
-      {logs.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Bot size={44} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>Chưa có hội thoại nào</Text>
-          <Text style={styles.emptySub}>
-            Hãy chạm vào biểu tượng micro để bắt đầu trò chuyện hoặc đặt báo thức!
-          </Text>
-        </View>
-      ) : (
-        logs.map((log) => (
-          <View key={log.id} style={styles.chatGroup}>
-            {/* User Input bubble */}
-            <View style={styles.userBubbleWrapper}>
-              <View style={styles.userBubble}>
-                <Text style={styles.userText}>{log.userInput}</Text>
-              </View>
-              <View style={styles.userAvatar}>
-                <User size={16} color="#FFFFFF" />
-              </View>
-            </View>
-
-            {/* AI Response bubble */}
-            <View style={styles.aiBubbleWrapper}>
-              <View style={styles.aiAvatar}>
-                <Bot size={16} color="#FFFFFF" />
-              </View>
-              <View style={styles.aiBubble}>
-                <View style={styles.intentHeaderRow}>
-                  <View style={styles.intentBadge}>
-                    <Sparkles size={12} color={Colors.secondary} />
-                    <Text style={styles.intentText}>{log.detectedIntent}</Text>
-                  </View>
-                  {log.isOffline && (
-                    <View style={styles.offlineBadge}>
-                      <WifiOff size={11} color={Colors.textMuted} />
-                      <Text style={styles.offlineText}>Offline</Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.aiText}>{log.aiResponse}</Text>
-
-                <View style={styles.aiFooter}>
-                  <Text style={styles.timestamp}>
-                    {formatLogTime(log.timestamp)}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.ttsBtn}
-                    onPress={() => handleReplay(log.aiResponse)}
-                    activeOpacity={0.7}
-                  >
-                    <Volume2 size={16} color={Colors.secondary} />
-                    <Text style={styles.ttsText}>Nghe lại</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
+        {logs.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Bot size={44} color={Colors.textMuted} />
+            <Text style={styles.emptyTitle}>Chưa có hội thoại nào</Text>
+            <Text style={styles.emptySub}>
+              Hãy nhập câu lệnh hoặc chạm vào biểu tượng micro để bắt đầu trò chuyện!
+            </Text>
           </View>
-        ))
-      )}
-    </ScrollView>
+        ) : (
+          logs.map((log) => (
+            <View key={log.id} style={styles.chatGroup}>
+              {/* User Input bubble */}
+              <View style={styles.userBubbleWrapper}>
+                <View style={styles.userBubble}>
+                  <Text style={styles.userText}>{log.userInput}</Text>
+                </View>
+                <View style={styles.userAvatar}>
+                  <User size={16} color="#FFFFFF" />
+                </View>
+              </View>
+
+              {/* AI Response bubble */}
+              <View style={styles.aiBubbleWrapper}>
+                <View style={styles.aiAvatar}>
+                  <Bot size={16} color="#FFFFFF" />
+                </View>
+                <View style={styles.aiBubble}>
+                  <View style={styles.intentHeaderRow}>
+                    <View style={styles.intentBadge}>
+                      <Sparkles size={12} color={Colors.secondary} />
+                      <Text style={styles.intentText}>{log.detectedIntent}</Text>
+                    </View>
+                    {log.isOffline && (
+                      <View style={styles.offlineBadge}>
+                        <WifiOff size={11} color={Colors.textMuted} />
+                        <Text style={styles.offlineText}>Offline</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <Text style={styles.aiText}>{log.aiResponse}</Text>
+
+                  <View style={styles.aiFooter}>
+                    <Text style={styles.timestamp}>
+                      {formatLogTime(log.timestamp)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.ttsBtn}
+                      onPress={() => handleReplay(log.aiResponse)}
+                      activeOpacity={0.7}
+                    >
+                      <Volume2 size={16} color={Colors.secondary} />
+                      <Text style={styles.ttsText}>Nghe lại</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {/* Text Chat Input Bar */}
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.textInput}
+          placeholder="Nhập yêu cầu cho AI (VD: Đặt báo thức 6h)..."
+          placeholderTextColor={Colors.textMuted}
+          value={inputText}
+          onChangeText={setInputText}
+          editable={!isSending}
+          onSubmitEditing={handleSend}
+          returnKeyType="send"
+        />
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            (!inputText.trim() || isSending) && styles.sendButtonDisabled,
+          ]}
+          onPress={handleSend}
+          disabled={!inputText.trim() || isSending}
+          accessibilityRole="button"
+          accessibilityLabel="Gửi câu lệnh cho AI"
+          activeOpacity={0.8}
+        >
+          {isSending ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Send size={18} color="#FFFFFF" />
+          )}
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -141,7 +206,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 110,
+    paddingBottom: 24,
   },
   screenTitle: {
     ...Typography.titleLarge,
@@ -283,5 +348,37 @@ const styles = StyleSheet.create({
   ttsText: {
     ...Typography.labelSmall,
     color: Colors.secondary,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 10,
+  },
+  textInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    ...Typography.bodyMedium,
+    color: Colors.textPrimary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
   },
 });

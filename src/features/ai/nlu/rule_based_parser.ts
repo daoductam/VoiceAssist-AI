@@ -52,6 +52,23 @@ export class RuleBasedParser implements IntentParser {
     const parsedDate = vietnameseTimeParser.parse(normalized);
     const parsedTimeOfDay = vietnameseTimeParser.parseTimeOfDay(normalized);
 
+    // 1.5. Detect negative commands for reminders and todos (e.g. "đừng nhắc", "không cần nhắc việc", "đừng thêm việc")
+    const isNegationCommand =
+      /(?:đừng|không(?:\s+(?:cần|được|muốn|phải))?|thôi(?:\s+đừng)?|chớ)\s+(?:nhắc|nhớ nhắc|ghi|thêm|tạo\s+lời\s+nhắc)/i.test(
+        normalized
+      );
+    if (isNegationCommand) {
+      return {
+        intent: 'generalQa',
+        confidence: 0.95,
+        entities: {
+          negationResponse:
+            'Dạ, mình sẽ không thực hiện yêu cầu này theo ý bạn nhé!',
+        },
+        rawText: raw,
+      };
+    }
+
     // 2. Iterate through patterns sorted by priority
     for (const patternDef of VIETNAMESE_INTENT_PATTERNS) {
       for (const trigger of patternDef.triggers) {

@@ -18,6 +18,7 @@ import { Sparkles, Clock, Calendar, ChevronRight, X, Pause, Play } from 'lucide-
 import { useAlarmStore } from '@shared/stores/useAlarmStore';
 import { useReminderStore } from '@shared/stores/useReminderStore';
 import { useSettingsStore } from '@shared/stores/useSettingsStore';
+import { useDialogueStore } from '@shared/stores/useDialogueStore';
 import { voicePipeline } from '@features/voice/voice_pipeline';
 import {
   getClosestActiveAlarm,
@@ -59,6 +60,7 @@ export const HomeScreen: React.FC = () => {
     error: remindersError,
   } = useReminderStore();
   const { toneStyle, ttsEnabled, loadSettings } = useSettingsStore();
+  const activeSession = useDialogueStore((state) => state.activeSession);
 
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
 
@@ -225,7 +227,9 @@ export const HomeScreen: React.FC = () => {
       <View style={styles.orbSection}>
         <VoiceOrb state={orbState} onPress={handleOrbPress} size={130} />
         <Text style={styles.orbHintTitle}>
-          {orbState === 'listening'
+          {activeSession
+            ? 'Đang chờ bạn trả lời câu hỏi...'
+            : orbState === 'listening'
             ? 'Đang lắng nghe bạn nói (Chạm lại để gửi)...'
             : orbState === 'thinking'
             ? 'AI đang xử lý yêu cầu...'
@@ -236,7 +240,9 @@ export const HomeScreen: React.FC = () => {
             : 'Chạm để nói chuyện với AI'}
         </Text>
         <Text style={styles.orbHintSub}>
-          Ví dụ: "Gọi tôi dậy lúc 6 rưỡi sáng mai nhé"
+          {activeSession
+            ? `Chạm để trả lời: "${activeSession.promptQuestion}"`
+            : 'Ví dụ: "Gọi tôi dậy lúc 6 rưỡi sáng mai nhé"'}
         </Text>
         {(orbState === 'listening' || orbState === 'thinking') && (
           <TouchableOpacity
@@ -293,6 +299,27 @@ export const HomeScreen: React.FC = () => {
           {liveResponse ? (
             <Text style={styles.liveResponseText}>🤖 {liveResponse}</Text>
           ) : null}
+        </View>
+      )}
+
+      {/* Active Dialogue Slot-Filling Session Banner */}
+      {activeSession && (
+        <View style={styles.activeSessionBanner}>
+          <View style={styles.activeSessionRow}>
+            <Sparkles size={16} color={Colors.secondary} />
+            <Text style={styles.activeSessionText} numberOfLines={2}>
+              Đang chờ: {activeSession.promptQuestion}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.cancelSessionPill}
+            onPress={() => useDialogueStore.getState().cancelSession()}
+            accessibilityRole="button"
+            accessibilityLabel="Hủy phiên trả lời"
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cancelSessionPillText}>Hủy</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -535,6 +562,42 @@ const styles = StyleSheet.create({
   liveResponseText: {
     ...Typography.bodyLarge,
     color: Colors.textPrimary,
+  },
+  activeSessionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderGlow,
+    gap: 8,
+  },
+  activeSessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  activeSessionText: {
+    ...Typography.labelMedium,
+    color: Colors.secondary,
+    flex: 1,
+  },
+  cancelSessionPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cancelSessionPillText: {
+    ...Typography.labelSmall,
+    color: Colors.textMuted,
   },
   heroCard: {
     backgroundColor: Colors.surface,

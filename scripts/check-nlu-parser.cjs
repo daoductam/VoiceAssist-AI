@@ -383,6 +383,34 @@ test('Follow-Up Simulation: user cancels pending session ("thôi không đặt n
   assert.strictEqual(useDialogueStore.getState().activeSession, null);
 });
 
+// Group 12: Negation Handling (Item 1)
+test('NLU Negation: "đừng đặt báo thức 6h" classifies as cancelAlarm', () => {
+  const parsed = ruleParser.parse('đừng đặt báo thức 6h');
+  assert.strictEqual(parsed.intent, 'cancelAlarm');
+  assert.strictEqual(parsed.entities.time, '06:00');
+});
+
+test('NLU Negation: "không được đặt chuông 7h" classifies as cancelAlarm', () => {
+  const parsed = ruleParser.parse('không được đặt chuông 7h');
+  assert.strictEqual(parsed.intent, 'cancelAlarm');
+  assert.strictEqual(parsed.entities.time, '07:00');
+});
+
+test('NLU Negation: "không cần nhắc việc lúc 5h" classifies as generalQa', () => {
+  const parsed = ruleParser.parse('không cần nhắc việc lúc 5h');
+  assert.strictEqual(parsed.intent, 'generalQa');
+});
+
+test('NLU Negation: "đừng nhắc tôi đi ngủ" classifies as generalQa', () => {
+  const parsed = ruleParser.parse('đừng nhắc tôi đi ngủ');
+  assert.strictEqual(parsed.intent, 'generalQa');
+});
+
+test('NLU Negation: "không cần thêm việc mua hoa" classifies as generalQa', () => {
+  const parsed = ruleParser.parse('không cần thêm việc mua hoa');
+  assert.strictEqual(parsed.intent, 'generalQa');
+});
+
 console.log(`\n========================================`);
 console.log(`ALL ${passCount} TEST CASES PASSED SUCCESSFULLY!`);
 console.log(`========================================\n`);

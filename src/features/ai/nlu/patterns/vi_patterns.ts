@@ -7,12 +7,13 @@ export interface IntentPatternDefinition {
 }
 
 export const VIETNAMESE_INTENT_PATTERNS: IntentPatternDefinition[] = [
-  // 0. Cancel Alarm (higher priority than setAlarm to catch "hủy báo thức")
+  // 0. Cancel Alarm (higher priority than setAlarm to catch "hủy báo thức" and negative commands)
   {
     intent: 'cancelAlarm',
     priority: 105,
     triggers: [
-      /(?:hủy|tắt|xóa|dừng|bỏ)\s*(?:báo thức|chuông báo|chuông)/i,
+      /(?:hủy|tắt|xóa|dừng|bỏ|đừng|không(?:\s+(?:cần|được|muốn|phải))?|thôi(?:\s+đừng)?|chớ)\s*(?:đặt|bật|tạo|hẹn)?\s*(?:báo thức|chuông báo|chuông)/i,
+      /(?:đừng|không(?:\s+(?:cần|được|muốn|phải))?|chớ)\s*(?:gọi|đánh thức)\s*(?:tôi|mình|em)?\s*(?:dậy|thức dậy)/i,
     ],
   },
 

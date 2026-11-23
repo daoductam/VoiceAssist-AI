@@ -381,6 +381,7 @@ export class ActionRouter {
 
         case 'generalQa': {
           responseText =
+            input.entities?.negationResponse ||
             input.llmMessage ||
             'Tôi có thể giúp bạn đặt báo thức, hẹn giờ nhắc việc và quản lý danh sách cần làm. Bạn hãy thử nói xem nhé!';
           actionTaken = false;
