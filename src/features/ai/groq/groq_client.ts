@@ -177,6 +177,8 @@ const GROQ_TOOLS = [
 ];
 
 export class GroqClient {
+  private activeModel: string | null = null;
+
   private async getApiKey(): Promise<string> {
     try {
       const stored = await SecureStore.getItemAsync(
@@ -281,46 +283,63 @@ Trả lời ngắn gọn, ấm áp và tự nhiên. Tuyệt đối không nhắc
     }
 
     try {
-      let response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: APP_CONSTANTS.GROQ_LLM_MODEL,
-          messages: conversationMessages,
-          tools: GROQ_TOOLS,
-          tool_choice: 'auto',
-          temperature: 0.1,
-        }),
-        signal: timeoutController.signal,
-      });
+      const candidateModels = [
+        ...(this.activeModel ? [this.activeModel] : []),
+        APP_CONSTANTS.GROQ_LLM_MODEL,
+        APP_CONSTANTS.GROQ_LLM_FAST_MODEL,
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant',
+        'qwen/qwen3.8-27b',
+      ].filter((m, i, arr) => arr.indexOf(m) === i);
 
-      // Fallback to fast model if primary model fails
-      if (!response.ok) {
-        console.warn(
-          `Primary LLM (${APP_CONSTANTS.GROQ_LLM_MODEL}) failed (${response.status}), falling back to ${APP_CONSTANTS.GROQ_LLM_FAST_MODEL}`
-        );
-        response = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: APP_CONSTANTS.GROQ_LLM_FAST_MODEL,
-            messages: conversationMessages,
-            tools: GROQ_TOOLS,
-            tool_choice: 'auto',
-            temperature: 0.1,
-          }),
-          signal: timeoutController.signal,
-        });
+      let response: Response | null = null;
+      let lastErrorDetail = '';
+
+      for (const modelName of candidateModels) {
+        if (timeoutController.signal.aborted) break;
+        try {
+          const res = await fetch(`${APP_CONSTANTS.GROQ_API_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: modelName,
+              messages: conversationMessages,
+              tools: GROQ_TOOLS,
+              tool_choice: 'auto',
+              temperature: 0.1,
+            }),
+            signal: timeoutController.signal,
+          });
+
+          if (res.ok) {
+            response = res;
+            this.activeModel = modelName;
+            break;
+          }
+
+          let errBody = '';
+          try {
+            const errJson = await res.json();
+            errBody = errJson.error?.message || JSON.stringify(errJson);
+          } catch {
+            errBody = await res.text();
+          }
+          lastErrorDetail = `[${modelName}] HTTP ${res.status}: ${errBody}`;
+          console.warn(
+            `Groq LLM model '${modelName}' failed (${res.status}): ${errBody}. Trying next candidate...`
+          );
+        } catch (err) {
+          if (timeoutController.signal.aborted) throw err;
+          lastErrorDetail = (err as Error).message;
+          console.warn(`Fetch error for model '${modelName}':`, err);
+        }
       }
 
-      if (!response.ok) {
-        throw new Error(`Groq LLM Error (${response.status})`);
+      if (!response || !response.ok) {
+        throw new Error(`Tất cả mô hình Groq LLM đều không phản hồi: ${lastErrorDetail}`);
       }
 
       const data = await response.json();

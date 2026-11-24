@@ -25,6 +25,7 @@ export const VIETNAMESE_INTENT_PATTERNS: IntentPatternDefinition[] = [
       /(?:đặt|bật|tạo|hẹn)?\s*(?:báo thức|chuông báo|chuông)\s*(?:lúc|vào)?/i,
       /(?:gọi|đánh thức)\s*(?:tôi|mình|em)?\s*(?:dậy|thức dậy)\s*(?:lúc|vào)?/i,
       /(?:hẹn giờ dậy|báo thức)\s*/i,
+      /(?:đặt|bật|tạo|hẹn)\s*(?:cho\s+)?(?:tôi|mình|em)?\s*(?:đi\s+ngủ|ngủ|thức|dậy)\s*(?:lúc|vào)?/i,
     ],
   },
 

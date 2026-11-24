@@ -84,6 +84,11 @@ export class RuleBasedParser implements IntentParser {
             entities.time = `${h}:${m}`;
           }
 
+          const repeatDays = vietnameseTimeParser.parseRepeatDays(normalized);
+          if (repeatDays.length > 0) {
+            entities.repeatDays = repeatDays.join(',');
+          }
+
           if (patternDef.intent === 'editTodo') {
             const edit = this.extractTodoEdit(raw);
             if (edit.oldTitle) entities.oldTitle = edit.oldTitle;
